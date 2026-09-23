@@ -7,7 +7,6 @@ module SoilSnowWaterPhaseChangeMod
   use ConstantDefineMod
   use SoilWaterSupercoolKoren99Mod, only : SoilWaterSupercoolKoren99
   use SoilWaterSupercoolNiu06Mod,   only : SoilWaterSupercoolNiu06
-  use mpas_log
 
   implicit none
 
@@ -33,7 +32,6 @@ contains
     real(kind=kind_noahmp)                :: SnowWaterRatio                 ! ratio of previous vs updated snow water equivalent 
     real(kind=kind_noahmp)                :: HeatLhTotPhsChg                ! total latent heat of phase change
     real(kind=kind_noahmp), allocatable, dimension(:) :: EnergyRes          ! energy residual [w/m2]
-    real(kind=kind_noahmp), allocatable, dimension(:) :: TemperatureRes     ! TemperatureRes residual [K]
     real(kind=kind_noahmp), allocatable, dimension(:) :: WaterPhaseChg      ! melting or freezing water [kg/m2]
     real(kind=kind_noahmp), allocatable, dimension(:) :: MassWatTotInit     ! initial total water (ice + liq) mass
     real(kind=kind_noahmp), allocatable, dimension(:) :: MassWatIceInit     ! initial ice content
@@ -70,7 +68,6 @@ contains
 
     !--- Initialization
     if (.not. allocated(EnergyRes)     ) allocate(EnergyRes     (-NumSnowLayerMax+1:NumSoilLayer))
-    if (.not. allocated(TemperatureRes)) allocate(TemperatureRes(-NumSnowLayerMax+1:NumSoilLayer))
     if (.not. allocated(WaterPhaseChg) ) allocate(WaterPhaseChg (-NumSnowLayerMax+1:NumSoilLayer))
     if (.not. allocated(MassWatTotInit)) allocate(MassWatTotInit(-NumSnowLayerMax+1:NumSoilLayer))
     if (.not. allocated(MassWatIceInit)) allocate(MassWatIceInit(-NumSnowLayerMax+1:NumSoilLayer))
@@ -78,7 +75,6 @@ contains
     if (.not. allocated(MassWatIceTmp) ) allocate(MassWatIceTmp (-NumSnowLayerMax+1:NumSoilLayer))
     if (.not. allocated(MassWatLiqTmp) ) allocate(MassWatLiqTmp (-NumSnowLayerMax+1:NumSoilLayer))
     EnergyRes          = 0.0
-    TemperatureRes     = 0.0
     WaterPhaseChg      = 0.0
     MassWatTotInit     = 0.0
     MassWatIceInit     = 0.0
@@ -88,7 +84,6 @@ contains
     MeltGroundSnow     = 0.0
     PondSfcThinSnwMelt = 0.0
     HeatLhTotPhsChg    = 0.0
-
 
     ! supercooled water content
     do LoopInd = -NumSnowLayerMax+1, NumSoilLayer 
@@ -101,12 +96,6 @@ contains
        MassWatLiqTmp(LoopInd) = SnowLiqWater(LoopInd)
     enddo
 
-!PK    call mpas_log_write('noahmp input max SoilLiqWater=$r',  realArgs=(/maxval(SoilLiqWater)/))
-!PK    call mpas_log_write('noahmp input min SoilLiqWater=$r',  realArgs=(/minval(SoilLiqWater)/))
-
-!PK    call mpas_log_write('noahmp input max SoilMoisture=$r',  realArgs=(/maxval(SoilMoisture)/))
-!PK    call mpas_log_write('noahmp input min SoilMoisture=$r',  realArgs=(/minval(SoilMoisture)/))
-
     ! soil layer water mass
     do LoopInd = 1, NumSoilLayer
        MassWatLiqTmp(LoopInd) = SoilLiqWater(LoopInd) * ThicknessSnowSoilLayer(LoopInd) * 1000.0
@@ -117,8 +106,7 @@ contains
     do LoopInd = NumSnowLayerNeg+1, NumSoilLayer
        IndexPhaseChange(LoopInd) = 0
        EnergyRes(LoopInd)        = 0.0
-       WaterPhaseChg(LoopInd)    = 0.0 
-       TemperatureRes(LoopInd)   = TemperatureSoilSnow(LoopInd)
+       WaterPhaseChg(LoopInd)    = 0.0
        MassWatIceInit(LoopInd)   = MassWatIceTmp(LoopInd)
        MassWatLiqInit(LoopInd)   = MassWatLiqTmp(LoopInd)
        MassWatTotInit(LoopInd)   = MassWatIceTmp(LoopInd) + MassWatLiqTmp(LoopInd)
@@ -143,45 +131,28 @@ contains
        enddo
     endif
 
-!PK    call mpas_log_write('noahmp input NumSoilLayer=$i'   ,  intArgs=(/NumSoilLayer/))
-!PK    call mpas_log_write('noahmp input NumSnowLayerNeg=$i',  intArgs=(/NumSnowLayerNeg/))
-!PK    call mpas_log_write('noahmp input NumSnowLayerMax=$i',  intArgs=(/NumSnowLayerMax/))
-!PK    call mpas_log_write('noahmp input max MassWatIceTmp=$r',  realArgs=(/maxval(MassWatIceTmp)/))
-!PK    call mpas_log_write('noahmp input min MassWatIceTmp=$r',  realArgs=(/minval(MassWatIceTmp)/))
-!PK    call mpas_log_write('noahmp input max MassWatLiqTmp=$r',  realArgs=(/maxval(MassWatLiqTmp)/))
-!PK    call mpas_log_write('noahmp input min MassWatLiqTmp=$r',  realArgs=(/minval(MassWatLiqTmp)/))
-
-!PK    call mpas_log_write('noahmp input max tslb=$r',  realArgs=(/maxval(TemperatureSoilSnow)/))
-!PK    call mpas_log_write('noahmp input min tslb=$r',  realArgs=(/minval(TemperatureSoilSnow)/))
-
     !--- determine melting or freezing state
     do LoopInd = NumSnowLayerNeg+1, NumSoilLayer
        if ( (MassWatIceTmp(LoopInd) > 0.0) .and. (TemperatureSoilSnow(LoopInd) >= ConstFreezePoint) ) then
           IndexPhaseChange(LoopInd) = 1  ! melting
-          TemperatureRes  (LoopInd) = TemperatureSoilSnow(LoopInd)
-          TemperatureRes  (LoopInd) = ConstFreezePoint
-      endif
+       endif
        if ( (MassWatLiqTmp(LoopInd) > SoilSupercoolWater(LoopInd)) .and. &
             (TemperatureSoilSnow(LoopInd) < ConstFreezePoint) ) then
           IndexPhaseChange(LoopInd) = 2  ! freezing
-          TemperatureRes  (LoopInd) = ConstFreezePoint
        endif
        ! If snow exists, but its thickness is not enough to create a layer
        if ( (NumSnowLayerNeg == 0) .and. (SnowWaterEquiv > 0.0) .and. (LoopInd == 1) ) then
           if ( TemperatureSoilSnow(LoopInd) >= ConstFreezePoint ) then
              IndexPhaseChange(LoopInd) = 1
-             TemperatureRes  (LoopInd) = ConstFreezePoint
           endif
        endif
     enddo
 
-
     !--- Calculate the energy surplus and loss for melting and freezing
-
     do LoopInd = NumSnowLayerNeg+1, NumSoilLayer
        if ( IndexPhaseChange(LoopInd) > 0 ) then
           EnergyRes(LoopInd)           = (TemperatureSoilSnow(LoopInd)-ConstFreezePoint) / PhaseChgFacSoilSnow(LoopInd)
-          TemperatureSoilSnow(LoopInd) = TemperatureRes  (LoopInd)
+          TemperatureSoilSnow(LoopInd) = ConstFreezePoint
        endif
        if ( (IndexPhaseChange(LoopInd) == 1) .and. (EnergyRes(LoopInd) < 0.0) ) then
           EnergyRes(LoopInd)        = 0.0
@@ -193,9 +164,6 @@ contains
        endif
        WaterPhaseChg(LoopInd) = EnergyRes(LoopInd) * MainTimeStep / ConstLatHeatFusion
     enddo
-
-!PK    call mpas_log_write('noahmp output max tslb=$r',  realArgs=(/maxval(TemperatureSoilSnow)/))
-!PK    call mpas_log_write('noahmp output min tslb=$r',  realArgs=(/minval(TemperatureSoilSnow)/))
 
     !--- The rate of melting for snow without a layer, needs more work.
     if ( (NumSnowLayerNeg == 0) .and. (SnowWaterEquiv > 0.0) .and. (WaterPhaseChg(1) > 0.0) ) then

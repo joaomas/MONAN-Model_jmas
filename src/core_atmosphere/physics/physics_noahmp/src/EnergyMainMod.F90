@@ -53,8 +53,6 @@ module EnergyMainMod
   use SoilSnowTemperatureMainMod,     only : SoilSnowTemperatureMain
   use SoilSnowWaterPhaseChangeMod,    only : SoilSnowWaterPhaseChange
 
-  use mpas_log
-
   implicit none
 
 contains
@@ -311,8 +309,6 @@ contains
     ! compute snow and soil layer temperature at soil timestep
     HeatFromSoilBot = 0.0
     HeatGroundTotAcc = HeatGroundTotAcc + HeatGroundTot
-
-
     if ( FlagSoilProcess .eqv. .true. ) then
        HeatGroundTotMean = HeatGroundTotAcc / NumSoilTimeStep
        call SoilSnowTemperatureMain(noahmp)
@@ -333,14 +329,8 @@ contains
        endif
     endif
 
-!  call mpas_log_write('noahmp input max tslb=$r',  realArgs=(/maxval(noahmp%energy%state%TemperatureSoilSnow)/))
-!  call mpas_log_write('noahmp input min tslb=$r',  realArgs=(/minval(noahmp%energy%state%TemperatureSoilSnow)/))
-
     ! Phase change and Energy released or consumed by snow & frozen soil
     call SoilSnowWaterPhaseChange(noahmp)
-
-!  call mpas_log_write('noahmp output max tslb=$r',  realArgs=(/maxval(noahmp%energy%state%TemperatureSoilSnow)/))
-!  call mpas_log_write('noahmp output min tslb=$r',  realArgs=(/minval(noahmp%energy%state%TemperatureSoilSnow)/))
 
     ! update sensible heat flux due to sprinkler irrigation evaporation
     if ( (FlagCropland .eqv. .true.) .and. (IrrigationFracGrid >= IrriFracThreshold) ) &

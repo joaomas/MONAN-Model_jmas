@@ -220,7 +220,6 @@
  call mpas_pool_get_array(diag_physics,'hfx'       ,hfx       )
  call mpas_pool_get_array(diag_physics,'qfx'       ,qfx       )
  call mpas_pool_get_array(diag_physics,'lh'        ,lh        )
-
  call mpas_pool_get_array(diag_physics,'sfc_albedo',sfc_albedo)
  call mpas_pool_get_array(diag_physics,'sfc_emiss' ,sfc_emiss )
  call mpas_pool_get_array(diag_physics,'sfcrunoff' ,sfcrunoff )
@@ -344,8 +343,6 @@
  integer,intent(in):: its,ite
 
 !local pointers:
- character(len=StrKIND),pointer:: config_microp_scheme
-
  character(len=StrKIND),pointer:: lsm_scheme
 
  real(kind=RKIND),dimension(:),pointer:: acsnom,acsnow,chs,chs2,cpm,cqs2,qgh,qsfc,grdflx,hfx, qfx,lh,noahres, &
@@ -373,11 +370,9 @@
  call mpas_pool_get_array(diag_physics,'hfx'       ,hfx       )
  call mpas_pool_get_array(diag_physics,'qfx'       ,qfx       )
  call mpas_pool_get_array(diag_physics,'lh'        ,lh        )
-
  call mpas_pool_get_array(diag_physics,'sfc_albedo',sfc_albedo)
  call mpas_pool_get_array(diag_physics,'sfc_emiss' ,sfc_emiss )
  call mpas_pool_get_array(diag_physics,'sfcrunoff' ,sfcrunoff )
-
  call mpas_pool_get_array(diag_physics,'z0'        ,z0        )
  call mpas_pool_get_array(diag_physics,'znt'       ,znt       )
 

@@ -25,29 +25,12 @@
  use mpas_atmphys_interface
  use mpas_atmphys_sfc_diagnostics,only: atmphys_sfc_diagnostics
  use mpas_atmphys_update
- use mpas_atmphys_vars, only: l_camlw,l_conv,l_radtlw,l_radtsw,kts,kte,dt_pbl
+ use mpas_atmphys_vars, only: l_camlw,l_conv,l_radtlw,l_radtsw
  use mpas_timer
-
- use module_pbl_scalars, only: driver_pbl_scalars
 
  implicit none
  private
  public:: physics_driver
- !
- ! Abstract interface for routine used to communicate halos of fields
- ! in a named group
- !
- abstract interface
-      subroutine halo_exchange_routine(domain, halo_group, ierr)
-
-         use mpas_derived_types, only : domain_type
-
-         type (domain_type), intent(inout) :: domain
-         character(len=*), intent(in) :: halo_group
-         integer, intent(out), optional :: ierr
-
-      end subroutine halo_exchange_routine
- end interface
 
 
 !MPAS top physics driver.
@@ -119,22 +102,18 @@
 !   Laura D. Fowler (laura@ucar.edu) / 2016-06-04.
 ! * added call to the Noah-MP land surface scheme.
 !   Laura D. Fowler (laura@ucar.edu) / 2024-03-11.
-! * Added call to boundary layer mixing for 'extras' scalars (see routine driver_pbl_scalars)
-!   Saulo R. Freitas (saulo.freitas@inpe.br) / 2024-09-19
 
 
  contains
 
 
 !=================================================================================================================
- subroutine physics_driver(domain,itimestep,xtime_s,exchange_halo_group)
+ subroutine physics_driver(domain,itimestep,xtime_s)
 !=================================================================================================================
 
 !input arguments:
  integer,intent(in):: itimestep
  real(kind=RKIND),intent(in):: xtime_s
- 
- procedure (halo_exchange_routine) :: exchange_halo_group
 
 !inout arguments:
  type(domain_type),intent(inout):: domain
@@ -270,7 +249,7 @@
     endif
 
     !call to accumulate long- and short-wave diagnostics if needed:
-     if(config_bucket_update /= 'none' .or. config_bucket_radt .gt. 0._RKIND) then
+     if(config_bucket_update /= 'none' .and. config_bucket_radt .gt. 0._RKIND) then
 !$OMP PARALLEL DO
        do thread=1,nThreads
           call update_radiation_diagnostics(block%configs,mesh,diag_physics, &
@@ -291,8 +270,7 @@
 !$OMP PARALLEL DO
        do thread=1,nThreads
           call driver_sfclayer(itimestep,block%configs,mesh,diag_physics,sfc_input, &
-                               cellSolveThreadStart(thread),cellSolveThreadEnd(thread), &
-                               state, time_lev)
+                               cellSolveThreadStart(thread),cellSolveThreadEnd(thread))
        end do
 !$OMP END PARALLEL DO
        call deallocate_sfclayer(block%configs)
@@ -345,9 +323,6 @@
        do thread=1,nThreads
           call driver_pbl(itimestep,block%configs,mesh,sfc_input,diag_physics,tend_physics, &
                           cellSolveThreadStart(thread),cellSolveThreadEnd(thread))
-
-          call driver_pbl_scalars(itimestep,diag_physics,block%configs,state,mesh,time_lev, &
-                                  cellSolveThreadStart(thread),cellSolveThreadEnd(thread),kts,kte,dt_pbl)
        end do
 !$OMP END PARALLEL DO
        call deallocate_pbl(block%configs)
@@ -377,8 +352,8 @@
        call allocate_convection(block%configs)
 !$OMP PARALLEL DO
        do thread=1,nThreads
-          call driver_convection(itimestep,block%configs,mesh,sfc_input,diag_physics,tend_physics,diag,domain%dminfo, &
-                                 cellSolveThreadStart(thread),cellSolveThreadEnd(thread),exchange_halo_group,block)
+          call driver_convection(itimestep,block%configs,mesh,sfc_input,diag_physics,tend_physics, &
+                                 cellSolveThreadStart(thread),cellSolveThreadEnd(thread))
        end do
 !$OMP END PARALLEL DO
        call deallocate_convection(block%configs)
@@ -387,9 +362,8 @@
     if(config_convection_scheme .ne. 'off') then
 !$OMP PARALLEL DO
        do thread=1,nThreads
-          call update_convection_step2(block%configs,mesh,sfc_input,diag_physics,tend_physics,state,diag, &
-                                       time_lev,cellSolveThreadStart(thread),cellSolveThreadEnd(thread),  &
-                                       exchange_halo_group,block)
+          call update_convection_step2(block%configs,diag_physics, &
+                               cellSolveThreadStart(thread),cellSolveThreadEnd(thread))
        end do
 !$OMP END PARALLEL DO
     end if

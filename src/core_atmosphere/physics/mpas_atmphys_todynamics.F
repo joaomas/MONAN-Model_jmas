@@ -6,6 +6,15 @@
 ! distributed with this code, or at http://mpas-dev.github.com/license.html
 !
 !=================================================================================================================
+
+#ifdef MPAS_OPENACC
+#define MPAS_ACC_TIMER_START(X) call mpas_timer_start(X)
+#define MPAS_ACC_TIMER_STOP(X) call mpas_timer_stop(X)
+#else
+#define MPAS_ACC_TIMER_START(X)
+#define MPAS_ACC_TIMER_STOP(X)
+#endif
+
  module mpas_atmphys_todynamics
  use mpas_kind_types
  use mpas_pool_routines
@@ -13,10 +22,11 @@
  use mpas_atm_dimensions
 
  use mpas_atmphys_constants, only: R_d,R_v,degrad
+ use mpas_timer, only: mpas_timer_start, mpas_timer_stop
 
  implicit none
  private
- public:: physics_get_tend
+ public:: physics_get_tend, pre_physics_get_tend, post_physics_get_tend
 
 
 !Interface between the physics parameterizations and the non-hydrostatic dynamical core.
@@ -41,25 +51,48 @@
 !   number concentrations due to PBL processes.
 !   Laura D. Fowler (laura@ucar.edu) / 2024-05-16.
 
-!
-! Abstract interface for routine used to communicate halos of fields
-! in a named group
-!
- abstract interface
-    subroutine halo_exchange_routine(domain, halo_group, ierr)
-
-       use mpas_derived_types, only : domain_type
-
-       type (domain_type), intent(inout) :: domain
-       character(len=*), intent(in) :: halo_group
-       integer, intent(out), optional :: ierr
-
-    end subroutine halo_exchange_routine
- end interface
+ ! Provides definition of halo_exchange_routine
+#include "mpas_halo_interface.inc"
 
 
  contains
 
+
+!=================================================================================================================
+ subroutine pre_physics_get_tend(configs,state,diag,tend)
+!=================================================================================================================
+
+!input variables:
+ type(mpas_pool_type),intent(in):: configs
+ type(mpas_pool_type),intent(in):: state
+ type(mpas_pool_type),intent(in):: diag
+ type(mpas_pool_type),intent(in):: tend
+
+#ifdef MPAS_OPENACC
+!local variables:
+ real(kind=RKIND),dimension(:,:),pointer:: mass          ! time level 2 rho_zz
+ real(kind=RKIND),dimension(:,:),pointer:: mass_edge     ! diag rho_edge
+ real(kind=RKIND),dimension(:,:),pointer:: theta_m       ! time level 1
+ real(kind=RKIND),dimension(:,:,:),pointer:: scalars
+
+ real(kind=RKIND),dimension(:,:),pointer:: tend_u_phys
+ real(kind=RKIND),dimension(:,:,:),pointer:: tend_scalars
+
+ MPAS_ACC_TIMER_START('atm_srk3: physics ACC_data_xfer')
+ call mpas_pool_get_array(state,'theta_m' ,theta_m,1)
+ call mpas_pool_get_array(state,'scalars' ,scalars,1)
+ call mpas_pool_get_array(state,'rho_zz'  ,mass,2   )
+ call mpas_pool_get_array(diag ,'rho_edge',mass_edge)
+ call mpas_pool_get_array(diag ,'tend_u_phys',tend_u_phys)
+
+ !$acc update self(theta_m, scalars, mass, mass_edge)
+
+ call mpas_pool_get_array(tend,'scalars_tend',tend_scalars)
+ !$acc update self(tend_scalars) ! Probably not needed
+ MPAS_ACC_TIMER_STOP('atm_srk3: physics ACC_data_xfer')
+#endif
+
+ end subroutine pre_physics_get_tend
  
 !=================================================================================================================
  subroutine physics_get_tend(block,mesh,state,diag,tend,tend_physics,configs,rk_step,dynamics_substep, &
@@ -77,7 +110,6 @@
 
 !inout variables:
  type(mpas_pool_type),intent(inout):: diag
-
  type(mpas_pool_type),intent(inout):: tend
  type(mpas_pool_type),intent(inout):: tend_physics
 
@@ -93,9 +125,6 @@
  integer:: i,iCell,k,n
  integer,pointer:: index_qv,index_qc,index_qr,index_qi,index_qs
  integer,pointer:: index_nc,index_ni,index_nifa,index_nwfa
-!-srf
- integer,pointer:: index_cnvcf, index_buoyx
-!-srf
  integer,pointer:: nCells,nCellsSolve,nEdges,nEdgesSolve
 
  real(kind=RKIND),dimension(:,:),pointer:: mass          ! time level 2 rho_zz
@@ -110,21 +139,13 @@
                                            rqrcuten,rqicuten,rqscuten, &
                                            rucuten,rvcuten
  real(kind=RKIND),dimension(:,:),pointer:: rthratenlw,rthratensw                                    
-
-!-srf 
- real(kind=RKIND),dimension(:,:),pointer:: rcnvcfcuten,rbuoyxcuten
-!-srf
-
+ 
  real(kind=RKIND),dimension(:,:),pointer:: tend_u_phys !nick
-
  real(kind=RKIND),dimension(:,:,:),pointer:: tend_scalars
-
-
 
  real(kind=RKIND),dimension(:,:),pointer:: rublten_Edge,rucuten_Edge
 
  real(kind=RKIND),dimension(:,:),allocatable:: tend_th
-
 
 !=================================================================================================================
 
@@ -150,13 +171,8 @@
  call mpas_pool_get_dimension(state,'index_qr',index_qr)
  call mpas_pool_get_dimension(state,'index_qi',index_qi)
  call mpas_pool_get_dimension(state,'index_qs',index_qs)
-
  call mpas_pool_get_dimension(state,'index_nc',index_nc)
  call mpas_pool_get_dimension(state,'index_ni',index_ni)
-!-srf
- call mpas_pool_get_dimension(state, 'index_cnvcf', index_cnvcf)
- call mpas_pool_get_dimension(state, 'index_buoyx', index_buoyx)
-!-srf
  call mpas_pool_get_dimension(state,'index_nifa',index_nifa)
  call mpas_pool_get_dimension(state,'index_nwfa',index_nwfa)
 
@@ -186,34 +202,22 @@
  call mpas_pool_get_array(tend_physics,'rthratenlw',rthratenlw)
  call mpas_pool_get_array(tend_physics,'rthratensw',rthratensw)
 
-!-srf 
- call mpas_pool_get_array(tend_physics, 'rcnvcfcuten', rcnvcfcuten)
- call mpas_pool_get_array(tend_physics, 'rbuoyxcuten', rbuoyxcuten)
-!-srf 
-
-
-
-
  call mpas_pool_get_array(tend,'scalars_tend',tend_scalars)
+
 
 !initialize the tendency for the potential temperature and all scalars due to PBL, convection,
 !and longwave and shortwave radiation:
-
  allocate(tend_th(nVertLevels,nCellsSolve))
  tend_th = 0._RKIND
 
  tend_scalars(:,:,:)      = 0._RKIND
-
  tend_ru_physics(:,:)     = 0._RKIND
  tend_rtheta_physics(:,:) = 0._RKIND
  tend_rho_physics(:,:)    = 0._RKIND
 
 
-!
-! in case some variables are not allocated due to their associated packages. 
-! we need to make their pointers associated here to avoid triggering run-time. 
-! checks when calling physics_get_tend_work:
-!
+!in case some variables are not allocated due to their associated packages. We need to make their pointers
+!associated here to avoid triggering run-time. checks when calling physics_get_tend_work:
  if(.not. associated(rucuten) ) allocate(rucuten(0,0) )
  if(.not. associated(rvcuten) ) allocate(rvcuten(0,0) )
  if(.not. associated(rthcuten)) allocate(rthcuten(0,0))
@@ -235,11 +239,6 @@
  if(.not. associated(rnifablten)) allocate(rnifablten(0,0))
  if(.not. associated(rnwfablten)) allocate(rnwfablten(0,0))
 
-!-srf
- if (.not. associated(rbuoyxcuten)) allocate(rbuoyxcuten(0,0))
- if (.not. associated(rcnvcfcuten)) allocate(rcnvcfcuten(0,0))
-!-srf
-
  call physics_get_tend_work( &
               block,mesh,nCells,nEdges,nCellsSolve,nEdgesSolve,rk_step,dynamics_substep, &
               pbl_scheme,convection_scheme,microp_scheme,radt_lw_scheme,radt_sw_scheme,  &
@@ -251,18 +250,9 @@
               rucuten,rvcuten,rthcuten,rqvcuten,rqccuten,rqrcuten,rqicuten,rqscuten,     &
               rthratenlw,rthratensw,rublten_Edge,rucuten_Edge,                           &
               tend_th,tend_rtheta_physics,tend_scalars,tend_ru_physics,tend_u_phys,      &
-              exchange_halo_group, &
+              exchange_halo_group)
 
-
-!-srf
-              index_cnvcf,index_buoyx,rbuoyxcuten,rcnvcfcuten)
-!-srf
-
-
-!
-! Clean up any pointers that were allocated with zero size before the call to
-! physics_get_tend_work:
-!
+!clean up any pointers that were allocated with zero size before the call to physics_get_tend_work:
  if(size(rucuten) == 0 ) deallocate(rucuten )
  if(size(rvcuten) == 0 ) deallocate(rvcuten )
  if(size(rthcuten) == 0) deallocate(rthcuten)
@@ -281,33 +271,34 @@
  if(size(rqsblten) == 0) deallocate(rqsblten)
  if(size(rncblten) == 0) deallocate(rncblten)
  if(size(rniblten) == 0) deallocate(rniblten)
-
  if(size(rnifablten) == 0) deallocate(rnifablten)
  if(size(rnwfablten) == 0) deallocate(rnwfablten)
- !-srf
- if (size(rbuoyxcuten) == 0) deallocate(rbuoyxcuten)
- if (size(rcnvcfcuten) == 0) deallocate(rcnvcfcuten)
- !-srf
-
 
  deallocate(tend_th)
 
-! if(rk_step .eq. 3) then
-!    call mpas_log_write('')
-!    call mpas_log_write('--- enter subroutine physics_get_tend:')
-!    call mpas_log_write('max rthblten   = $r',realArgs=(/maxval(rthblten(:,1:nCellsSolve))/))
-!    call mpas_log_write('min rthblten   = $r',realArgs=(/minval(rthblten(:,1:nCellsSolve))/))
-!    call mpas_log_write('max rthcuten   = $r',realArgs=(/maxval(rthcuten(:,1:nCellsSolve))/))
-!    call mpas_log_write('min rthcuten   = $r',realArgs=(/minval(rthcuten(:,1:nCellsSolve))/))
-!    call mpas_log_write('max rthratenlw = $r',realArgs=(/maxval(rthratenlw(:,1:nCellsSolve))/))
-!    call mpas_log_write('min rthratenlw = $r',realArgs=(/minval(rthratenlw(:,1:nCellsSolve))/))
-!    call mpas_log_write('max rthratensw = $r',realArgs=(/maxval(rthratensw(:,1:nCellsSolve))/))
-!    call mpas_log_write('min rthratensw = $r',realArgs=(/minval(rthratensw(:,1:nCellsSolve))/))
-!    call mpas_log_write('--- end subroutine physics_get_tend')
-!    call mpas_log_write('')
-! endif
-
  end subroutine physics_get_tend
+
+ !=================================================================================================================
+ subroutine post_physics_get_tend(configs,state,diag,tend)
+!=================================================================================================================
+
+!input variables:
+ type(mpas_pool_type),intent(in):: configs
+ type(mpas_pool_type),intent(in):: state
+ type(mpas_pool_type),intent(in):: diag
+ type(mpas_pool_type),intent(in):: tend
+
+#ifdef MPAS_OPENACC
+!local variables:
+ real(kind=RKIND),dimension(:,:,:),pointer:: tend_scalars
+
+ MPAS_ACC_TIMER_START('atm_srk3: physics ACC_data_xfer')
+ call mpas_pool_get_array(tend,'scalars_tend',tend_scalars)
+ !$acc update device(tend_scalars)
+ MPAS_ACC_TIMER_STOP('atm_srk3: physics ACC_data_xfer')
+#endif
+
+ end subroutine post_physics_get_tend
 
 !=================================================================================================================
  subroutine physics_get_tend_work( &
@@ -321,18 +312,11 @@
                     rucuten,rvcuten,rthcuten,rqvcuten,rqccuten,rqrcuten,rqicuten,rqscuten,     &
                     rthratenlw,rthratensw,rublten_Edge,rucuten_Edge,                           &
                     tend_th,tend_theta,tend_scalars,tend_u,tend_u_phys,                        &
-                    exchange_halo_group, &
-!-srf
-                    index_cnvcf,index_buoyx,rbuoyxcuten,rcnvcfcuten)
-!-srf
-
+                    exchange_halo_group)
 !=================================================================================================================
 
 !input arguments:
-
  procedure(halo_exchange_routine):: exchange_halo_group
-
-
 
  type(block_type),intent(in)    :: block
  type(mpas_pool_type),intent(in):: mesh
@@ -347,9 +331,6 @@
  integer,intent(in):: rk_step,dynamics_substep
  integer,intent(in):: index_qv,index_qc,index_qr,index_qi,index_qs
  integer,intent(in):: index_nc,index_ni,index_nifa,index_nwfa
-!-srf
-    integer, intent(in) :: index_cnvcf,index_buoyx
-!-srf
 
  real(kind=RKIND),intent(in),dimension(nVertLevels,nCells+1):: mass
  real(kind=RKIND),intent(in),dimension(nVertLevels,nEdges+1):: mass_edge
@@ -379,10 +360,6 @@
 
  real(kind=RKIND),intent(in),dimension(nVertLevels,nCells+1):: rthratenlw
  real(kind=RKIND),intent(in),dimension(nVertLevels,nCells+1):: rthratensw
-!-srf
- real(kind=RKIND),intent(in),dimension(nVertLevels,nCells+1):: rbuoyxcuten
- real(kind=RKIND),intent(in),dimension(nVertLevels,nCells+1):: rcnvcfcuten
-!-srf
 
 !inout arguments:
  real(kind=RKIND),intent(inout),dimension(nVertLevels,nEdges+1):: rublten_Edge
@@ -392,6 +369,7 @@
 
  real(kind=RKIND),intent(inout),dimension(nVertLevels,nCells+1):: tend_th
  real(kind=RKIND),intent(inout),dimension(nVertLevels,nCells+1):: tend_theta
+
  real(kind=RKIND),intent(inout),dimension(num_scalars,nVertLevels,nCells+1):: tend_scalars
 
 !local variables:
@@ -406,7 +384,6 @@
        call exchange_halo_group(block%domain,'physics:blten')
        call tend_toEdges(block,mesh,rublten,rvblten,rublten_Edge)
 
-          !MGD for PV budget? should a similar line be in the cumulus section below?
        tend_u_phys(1:nVertLevels,1:nEdges) = rublten_Edge(1:nVertLevels,1:nEdges)
     end if
 
@@ -426,9 +403,7 @@
     enddo
 
     pbl_select: select case(trim(pbl_scheme))
-
        case('bl_mynn')
-
           do i = 1, nCellsSolve
           do k = 1, nVertLevels
              tend_scalars(index_qs,k,i) = tend_scalars(index_qs,k,i) + rqsblten(k,i)*mass(k,i)
@@ -453,7 +428,6 @@
 
 !add coupled tendencies due to convection:
  if(convection_scheme .ne. 'off') then
-
     do i = 1, nCellsSolve
     do k = 1, nVertLevels
        tend_th(k,i) = tend_th(k,i) + rthcuten(k,i)*mass(k,i)
@@ -464,7 +438,6 @@
     enddo
 
     cu_select: select case(trim(convection_scheme))
-
        case('cu_kain_fritsch')
           do i = 1, nCellsSolve
           do k = 1, nVertLevels
@@ -486,29 +459,6 @@
              tend_u(k,i)=tend_u(k,i)+rucuten_Edge(k,i)*mass_edge(k,i)
           enddo
           enddo
-
-       case('cu_gf_monan')
-              if (rk_step == 1 .and. dynamics_substep == 1) then
-                 call exchange_halo_group(block % domain, 'physics:cuten')
-                 call tend_toEdges(block,mesh,rucuten,rvcuten,rucuten_Edge)
-                 
-                 tend_u_phys(1:nVertLevels,1:nEdges) =  tend_u_phys(1:nVertLevels,1:nEdges) &
-                                                     + rucuten_Edge(1:nVertLevels,1:nEdges)
-              end if
-              do i = 1, nEdgesSolve
-              do k = 1, nVertLevels
-                 tend_u(k,i)=tend_u(k,i)+rucuten_Edge(k,i)*mass_edge(k,i)
-              enddo
-              enddo          
-!srf- the sources and sinks of the scalars below are included in the routine "update_convection_step2" 
-!     so, they are comment out here to avoid double contribution
-!              do i = 1, nCellsSolve
-!              do k = 1, nVertLevels
-!                 tend_scalars(index_cnvcf,k,i) = tend_scalars(index_cnvcf,k,i) + rcnvcfcuten(k,i)*mass(k,i)
-!                 tend_scalars(index_buoyx,k,i) = tend_scalars(index_buoyx,k,i) + rbuoyxcuten(k,i)*mass(k,i)
-!              enddo
-!              enddo
-!srf---------------------------------------------------------------------------------------------------------
 
        case default
     end select cu_select
@@ -536,7 +486,6 @@
 
 
 !convert the tendency for the potential temperature to tendency for the modified potential temperature:
-
  do i = 1, nCellsSolve
  do k = 1, nVertLevels
     coeff = (1. + R_v/R_d * scalars(index_qv,k,i))

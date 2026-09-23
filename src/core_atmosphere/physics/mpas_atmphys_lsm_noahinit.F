@@ -98,7 +98,6 @@
 
 !local variables:
  logical,parameter:: fndsnowh = .true.
- logical:: soil_moisture_adjustment = .false.
 
  integer:: iCell
  integer:: errflag,ns
@@ -192,9 +191,6 @@
           enddo
        endif ! of if ((bx > 0.0)
     enddo    ! do iCell
-    if (soil_moisture_adjustment) then
-       call physics_message( 'srf: initial soil moisture reduced by 30%' )
-    endif
 
 !initialize physical snow height SNOWH:
     if(.not.fndsnowh)then

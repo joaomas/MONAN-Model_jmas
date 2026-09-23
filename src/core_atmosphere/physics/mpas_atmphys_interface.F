@@ -6,17 +6,29 @@
 ! distributed with this code, or at http://mpas-dev.github.com/license.html
 !
 !=================================================================================================================
+
+#ifdef MPAS_OPENACC
+#define MPAS_ACC_TIMER_START(X) call mpas_timer_start(X)
+#define MPAS_ACC_TIMER_STOP(X) call mpas_timer_stop(X)
+#else
+#define MPAS_ACC_TIMER_START(X)
+#define MPAS_ACC_TIMER_STOP(X)
+#endif
+
  module mpas_atmphys_interface
  use mpas_kind_types
  use mpas_pool_routines
 
  use mpas_atmphys_constants
  use mpas_atmphys_vars
+ use mpas_timer, only: mpas_timer_start, mpas_timer_stop
 
  implicit none
  private
  public:: allocate_forall_physics,   &
           deallocate_forall_physics, &
+          pre_microphysics, &
+          post_microphysics, &
           MPAS_to_physics,           &
           microphysics_from_MPAS,    &
           microphysics_to_MPAS
@@ -64,7 +76,8 @@
 !   Laura D. Fowler (laura@ucar.edu) / 2016-04-11.
 ! * corrected the calculation of the surface pressure, mainly extrapolation of the air density to the surface.
 !   Laura D. Fowler (laura@ucar.edu) / 2016-04-25.
-
+! * changed microphysics update such that the microphsyics tendency is ignored above level mp_top_level
+!   Bill Skamarock / 2025/10/17 
 
  contains
 
@@ -77,9 +90,8 @@
  type(mpas_pool_type),intent(in):: configs
 
 !local pointers:
-!-srf
- character(len=StrKIND),pointer:: microp_scheme,pbl_scheme,convection_scheme
-!-srf
+ character(len=StrKIND),pointer:: microp_scheme,pbl_scheme
+
 !-----------------------------------------------------------------------------------------------------------------
 
  call mpas_pool_get_config(configs,'config_microp_scheme',microp_scheme)
@@ -133,16 +145,7 @@
 
     case default
  end select pbl_select
-!-srf
- call mpas_pool_get_config(configs,'config_convection_scheme',convection_scheme)
- convection_select: select case(trim(convection_scheme))
-    case("cu_gf_monan")
-       if(.not.allocated(cnvcf_p)) allocate(cnvcf_p(ims:ime,kms:kme,jms:jme))
-       if(.not.allocated(buoyx_p)) allocate(buoyx_p(ims:ime,kms:kme,jms:jme))
-    case default
-!-srf
 
- end select convection_select
 !... arrays used for calculating the hydrostatic pressure and exner function:
  if(.not.allocated(psfc_hyd_p)  ) allocate(psfc_hyd_p(ims:ime,jms:jme)          )
  if(.not.allocated(psfc_hydd_p) ) allocate(psfc_hydd_p(ims:ime,jms:jme)         )
@@ -162,9 +165,8 @@
  type(mpas_pool_type),intent(in):: configs
 
 !local pointers:
-!-srf
- character(len=StrKIND),pointer:: microp_scheme,pbl_scheme,convection_scheme
-!-srf
+ character(len=StrKIND),pointer:: microp_scheme,pbl_scheme
+
 !-----------------------------------------------------------------------------------------------------------------
 
  call mpas_pool_get_config(configs,'config_microp_scheme',microp_scheme)
@@ -219,17 +221,6 @@
     case default
  end select pbl_select
 
-!-srf
- call mpas_pool_get_config(configs,'config_convection_scheme',convection_scheme)
- convection_select: select case(trim(convection_scheme))
-    case("cu_gf_monan")
-       if(allocated(cnvcf_p)) deallocate(cnvcf_p)
-       if(allocated(buoyx_p)) deallocate(buoyx_p)
-    
-    case default
- end select convection_select
-!-srf
-
  if(allocated(psfc_hyd_p)  ) deallocate(psfc_hyd_p  )
  if(allocated(psfc_hydd_p) ) deallocate(psfc_hydd_p )
  if(allocated(pres_hyd_p)  ) deallocate(pres_hyd_p  )
@@ -257,16 +248,10 @@
  type(mpas_pool_type),intent(inout):: diag_physics
 
 !local pointers:
-!-srf
- character(len=StrKIND),pointer:: microp_scheme,pbl_scheme,convection_scheme
-!-srf
+ character(len=StrKIND),pointer:: microp_scheme,pbl_scheme
 
  integer,pointer:: index_qv,index_qc,index_qr,index_qi,index_qs,index_qg
  integer,pointer:: index_nc,index_ni,index_nifa,index_nwfa
-!-srf
- integer,pointer:: index_cnvcf, index_buoyx
- integer,pointer:: config_gf_cporg, config_gf_pcvol
-!-srf
 
  real(kind=RKIND),dimension(:),pointer    :: latCell,lonCell
  real(kind=RKIND),dimension(:),pointer    :: fzm,fzp,rdzw
@@ -277,9 +262,6 @@
  real(kind=RKIND),dimension(:,:),pointer  :: qv,qc,qr,qi,qs,qg
  real(kind=RKIND),dimension(:,:),pointer  :: nc,ni,nifa,nwfa
  real(kind=RKIND),dimension(:,:,:),pointer:: scalars
-!-srf
- real(kind=RKIND),dimension(:,:),pointer  :: cnvcf,buoyx
-!-srf
 
 !local variables:
  integer:: i,k,j
@@ -442,38 +424,6 @@
     case default
  end select pbl_select
 
-!-srf
- call mpas_pool_get_config(configs,'config_convection_scheme',convection_scheme)
- convection_select: select case(trim(convection_scheme))
-    case("cu_gf_monan")
-       call mpas_pool_get_config(configs,'config_gf_pcvol',config_gf_pcvol)
-       call mpas_pool_get_config(configs,'config_gf_cporg',config_gf_cporg)
-       if(config_gf_cporg == 1) then 
-         call mpas_pool_get_dimension(state,'index_buoyx',index_buoyx)
-         buoyx => scalars(index_buoyx,:,:)
-         do j = jts, jte
-         do k = kts, kte
-         do i = its, ite
-            buoyx_p(i,k,j) = max(0.,buoyx(k,i))
-         enddo
-         enddo
-         enddo
-       end if
-       if(config_gf_pcvol > 0) then 
-         call mpas_pool_get_dimension(state,'index_cnvcf',index_cnvcf)
-         cnvcf => scalars(index_cnvcf,:,:)
-         do j = jts, jte
-         do k = kts, kte
-         do i = its, ite
-            cnvcf_p(i,k,j) = min(1.,max(0.,cnvcf(k,i)))
-         enddo
-         enddo
-         enddo
-       endif
-    case default
- end select convection_select
-!-srf
-
 !calculation of the surface pressure using hydrostatic assumption down to the surface::
  do j = jts,jte
  do i = its,ite
@@ -609,6 +559,42 @@
  end subroutine MPAS_to_physics
 
 !=================================================================================================================
+ subroutine pre_microphysics(configs,state,diag,time_lev)
+!=================================================================================================================
+
+!input variables:
+ type(mpas_pool_type),intent(in):: configs
+ type(mpas_pool_type),intent(in):: state
+ type(mpas_pool_type),intent(in):: diag
+
+ integer:: time_lev
+
+#ifdef MPAS_OPENACC
+!local pointers:
+ real(kind=RKIND),dimension(:,:),pointer  :: exner,pressure_b,w
+ real(kind=RKIND),dimension(:,:),pointer  :: rho_zz,theta_m,pressure_p
+ real(kind=RKIND),dimension(:,:,:),pointer:: scalars
+
+
+ MPAS_ACC_TIMER_START('pre_microphysics [ACC_data_xfer]')
+ call mpas_pool_get_array(diag,'exner'        ,exner     )
+ call mpas_pool_get_array(diag,'pressure_base',pressure_b)
+ call mpas_pool_get_array(diag,'pressure_p'   ,pressure_p)
+
+ call mpas_pool_get_array(state,'rho_zz' ,rho_zz ,time_lev)
+ call mpas_pool_get_array(state,'theta_m',theta_m,time_lev)
+ call mpas_pool_get_array(state,'w'      ,w      ,time_lev)
+ !$acc update host(exner, pressure_b, pressure_p, rho_zz, theta_m, w)
+
+ call mpas_pool_get_array(state,'scalars',scalars,time_lev)
+ !$acc update host(scalars)
+
+ MPAS_ACC_TIMER_STOP('pre_microphysics [ACC_data_xfer]')
+#endif
+
+end subroutine pre_microphysics
+
+!=================================================================================================================
  subroutine microphysics_from_MPAS(configs,mesh,state,time_lev,diag,diag_physics,tend_physics,its,ite)
 !=================================================================================================================
 
@@ -662,22 +648,6 @@
  call mpas_pool_get_dimension(state,'index_qv',index_qv)
  call mpas_pool_get_dimension(state,'index_qc',index_qc)
  call mpas_pool_get_dimension(state,'index_qr',index_qr)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
  call mpas_pool_get_array(state,'scalars',scalars,time_lev)
  qv => scalars(index_qv,:,:)
  qc => scalars(index_qc,:,:)
@@ -728,7 +698,7 @@
           qg_p(i,k,j) = qg(k,i)
 
           rainprod_p(i,k,j) = rainprod(k,i)
-          evapprod_p(i,k,j) = evapprod(k,k)
+          evapprod_p(i,k,j) = evapprod(k,i)
           recloud_p(i,k,j)  = re_cloud(k,i)
           reice_p(i,k,j)    = re_ice(k,i)
           resnow_p(i,k,j)   = re_snow(k,i)
@@ -889,6 +859,7 @@
  real(kind=RKIND),dimension(:,:),pointer  :: rthmpten,rqvmpten,rqcmpten,rqrmpten,rqimpten,rqsmpten,rqgmpten
  real(kind=RKIND),dimension(:,:),pointer  :: rncmpten,rnimpten,rnrmpten,rnifampten,rnwfampten
  real(kind=RKIND),dimension(:,:,:),pointer:: scalars
+ integer,pointer:: mp_top_level
 
 !local variables:
  integer:: icount
@@ -901,6 +872,8 @@
 
  call mpas_pool_get_array(mesh,'zz'   ,zz   )
  call mpas_pool_get_array(mesh,'zgrid',zgrid)
+
+ call mpas_pool_get_array(tend_physics,'mp_top_level',mp_top_level)
 
  call mpas_pool_get_array(diag,'exner'           ,exner           )
  call mpas_pool_get_array(diag,'exner_base'      ,exner_b         )
@@ -928,7 +901,7 @@
 
 !update variables needed in the dynamical core:
  do j = jts,jte
- do k = kts,kte
+ do k = kts,mp_top_level
  do i = its,ite
 
     !initializes tendency of coupled potential temperature potential temperature, and
@@ -960,6 +933,18 @@
  enddo
  enddo
 
+ ! no microphysics updates above mp_top_level
+ ! why are we not applying this to theta and qv?
+ if(kte .gt. mp_top_level) then
+    do i = its,ite
+    do k = mp_top_level+1,kte
+       qc(k,i) = 0.
+       qr(k,i) = 0.
+       rt_diabatic_tend(k,i) = 0.
+    enddo
+    enddo
+ endif
+ 
 !update surface pressure and calculates the surface pressure tendency:
  do j = jts,jte
  do i = its,ite
@@ -996,7 +981,7 @@
        call mpas_pool_get_array(diag_physics,'refl10cm',refl10cm)
 
        do j = jts,jte
-       do k = kts,kte
+       do k = kts,mp_top_level
        do i = its,ite
           qi(k,i) = qi_p(i,k,j)
           qs(k,i) = qs_p(i,k,j)
@@ -1010,6 +995,22 @@
        enddo
        enddo
        enddo
+
+       ! no microphysics updates above mp_top_level
+       if(kte .gt. mp_top_level) then
+          do i = its,ite
+          do k = mp_top_level+1,kte
+             qi(k,i) = 0.
+             qs(k,i) = 0.
+             qg(k,i) = 0.
+             rainprod(k,i) = 0.
+             evapprod(k,i) = 0.
+             re_cloud(k,i) = re_qc_bg
+             re_ice(k,i)   = re_qi_bg
+             re_snow(k,i)  = re_qs_bg
+          enddo
+          enddo
+       end if
 
        mp2_select: select case(trim(mp_scheme))
           case("mp_thompson","mp_thompson_aerosols")
@@ -1072,8 +1073,8 @@
        call mpas_pool_get_array(tend_physics,'rqsmpten',rqsmpten)
        call mpas_pool_get_array(tend_physics,'rqgmpten',rqgmpten)
 
-       do k = kts,kte
        do i = its,ite
+       do k = kts,mp_top_level
           rthmpten(k,i) = (theta_m(k,i)/(1._RKIND+R_v/R_d*max(0._RKIND,qv(k,i)))-rthmpten(k,i))/dt_dyn
           rqvmpten(k,i) = (qv(k,i)-rqvmpten(k,i))/dt_dyn
           rqcmpten(k,i) = (qc(k,i)-rqcmpten(k,i))/dt_dyn
@@ -1083,6 +1084,21 @@
           rqgmpten(k,i) = (qg(k,i)-rqgmpten(k,i))/dt_dyn
        enddo
        enddo
+
+       ! no microphysics tendency above level mp_top_level
+       if(kte .gt. mp_top_level) then
+          do i = its, ite
+          do k = mp_top_level+1, kte
+             rthmpten(k,i) = 0.
+             rqvmpten(k,i) = 0.
+             rqcmpten(k,i) = 0.
+             rqrmpten(k,i) = 0.
+             rqimpten(k,i) = 0.
+             rqsmpten(k,i) = 0.
+             rqgmpten(k,i) = 0.
+          enddo
+          enddo
+       endif
 
        mp2_tend_select: select case(trim(mp_scheme))
           case("mp_thompson","mp_thompson_aerosols")
@@ -1120,6 +1136,50 @@
  end select mp_tend_select
 
  end subroutine microphysics_to_MPAS
+
+!=================================================================================================================
+ subroutine post_microphysics(configs,state,diag,tend,time_lev)
+!=================================================================================================================
+
+!input variables:
+ type(mpas_pool_type),intent(in):: configs
+ type(mpas_pool_type),intent(in):: state
+ type(mpas_pool_type),intent(in):: diag
+ type(mpas_pool_type),intent(inout):: tend
+
+
+ integer:: time_lev
+
+#ifdef MPAS_OPENACC
+!local pointers:
+ real(kind=RKIND),dimension(:,:),pointer  :: exner,exner_b,pressure_b,rtheta_p,rtheta_b
+ real(kind=RKIND),dimension(:,:),pointer  :: rho_zz,theta_m,pressure_p
+ real(kind=RKIND),dimension(:,:,:),pointer:: scalars
+ real(kind=RKIND),dimension(:,:),pointer  :: rt_diabatic_tend
+
+ call mpas_pool_get_array(diag,'exner'        ,exner     )
+ call mpas_pool_get_array(diag,'exner_base'   ,exner_b   )
+ call mpas_pool_get_array(diag,'pressure_base',pressure_b)
+ call mpas_pool_get_array(diag,'pressure_p'   ,pressure_p)
+ call mpas_pool_get_array(diag,'rtheta_base'  ,rtheta_b  )
+ call mpas_pool_get_array(diag,'rtheta_p'     ,rtheta_p  )
+
+ call mpas_pool_get_array(state,'rho_zz' ,rho_zz ,time_lev)
+ call mpas_pool_get_array(state,'theta_m',theta_m,time_lev)
+
+ call mpas_pool_get_array(state,'scalars',scalars,time_lev)
+
+ call mpas_pool_get_array(tend,'rt_diabatic_tend',rt_diabatic_tend)
+
+
+ MPAS_ACC_TIMER_START('post_microphysics [ACC_data_xfer]')
+ !$acc update device(exner, exner_b, pressure_b, pressure_p, rtheta_b)
+ !$acc update device(rtheta_p, rho_zz, theta_m, scalars)
+ !$acc update device(rt_diabatic_tend)
+ MPAS_ACC_TIMER_STOP('post_microphysics [ACC_data_xfer]')
+#endif
+
+end subroutine post_microphysics
 
 !=================================================================================================================
  end module mpas_atmphys_interface

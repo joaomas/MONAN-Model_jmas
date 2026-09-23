@@ -10,9 +10,8 @@ DIAGNOSTIC_MODULES = \
 	mpas_convective_diagnostics.o \
 	mpas_pv_diagnostics.o \
 	mpas_soundings.o \
-	mpas_vertical_interpolation.o \
 
-mpas_isobaric_diagnostics.o: mpas_atm_diagnostics_utils.o mpas_vertical_interpolation.o
+mpas_isobaric_diagnostics.o: mpas_atm_diagnostics_utils.o
 
 mpas_cloud_diagnostics.o: mpas_atm_diagnostics_utils.o
 
@@ -22,7 +21,6 @@ mpas_pv_diagnostics.o: mpas_atm_diagnostics_utils.o
 
 mpas_soundings.o:
 
-mpas_vertical_interpolation.o:
 
 ################### Generally no need to modify below here ###################
 
@@ -43,7 +41,7 @@ clean:
 	$(RM) $@ $*.mod
 ifeq "$(GEN_F90)" "true"
 	$(CPP) $(CPPFLAGS) $(PHYSICS) $(CPPINCLUDES) $< > $*.f90
-	$(FC) $(FFLAGS) -c $*.f90 $(FCINCLUDES) -I../../framework -I../../operators -I../dynamics -I../physics -I../physics/physics_wrf -I../../external/esmf_time_f90
+	$(FC) $(FFLAGS) -c $*.f90 $(FCINCLUDES) -I../../framework -I../../operators -I../dynamics -I../physics -I../physics/physics_wrf $(MPAS_ESMF_INC)
 else
-	$(FC) $(CPPFLAGS) $(PHYSICS) $(FFLAGS) -c $*.F $(CPPINCLUDES) $(FCINCLUDES) -I../../framework -I../../operators -I../dynamics -I../physics -I../physics/physics_wrf -I../../external/esmf_time_f90
+	$(FC) $(CPPFLAGS) $(PHYSICS) $(FFLAGS) -c $*.F $(CPPINCLUDES) $(FCINCLUDES) -I../../framework -I../../operators -I../dynamics -I../physics -I../physics/physics_wrf $(MPAS_ESMF_INC)
 endif
