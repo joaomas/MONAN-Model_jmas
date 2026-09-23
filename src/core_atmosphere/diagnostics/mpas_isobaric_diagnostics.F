@@ -13,15 +13,10 @@ module mpas_isobaric_diagnostics
     use mpas_pool_routines
     use mpas_constants
     use mpas_log, only : mpas_log_write
-    use VerticalInterpolation
 
     type (MPAS_pool_type), pointer :: mesh
     type (MPAS_pool_type), pointer :: state
     type (MPAS_pool_type), pointer :: diag
-    type (MPAS_pool_type), pointer :: diag_physics
-#ifdef DO_PHYSICS
-    type (MPAS_pool_type), pointer :: tend_physics
-#endif
 
     type (MPAS_clock_type), pointer :: clock
 
@@ -30,21 +25,17 @@ module mpas_isobaric_diagnostics
 
     private
 
-    logical :: need_mslp, need_bl_mynn, need_cu_grell_freitas, need_mp_thompson, &
-               need_t_isobaric, need_z_isobaric, need_u_isobaric, need_meanT_500_300
-
-    logical :: need_cldfrac_isobaric, need_temperature_isobaric, need_dewpoint_isobaric, &
-               need_relhum_isobaric, need_w_isobaric,need_uzonal_isobaric, &
-               need_umeridional_isobaric, need_vorticity_isobaric, need_height_isobaric, &
-               need_spechum_isobaric, need_omega_isobaric, &
-               need_rqvblten_isobaric, need_rthblten_isobaric, need_rqvcuten_isobaric, &
-               need_rthcuten_isobaric, need_rthratenlw_isobaric, need_rthratensw_isobaric, &
-               need_rucuten_isobaric, need_rvcuten_isobaric, need_rvblten_isobaric, &
-               need_rublten_isobaric, need_kzq_isobaric, need_kzh_isobaric, &
-               need_kzm_isobaric, need_ni_isobaric, need_nr_isobaric, &
-               need_qr_isobaric, need_qs_isobaric, need_qv_isobaric, &
-               need_qc_isobaric, need_qg_isobaric, need_qi_isobaric, &
-               need_zgeo_isobaric
+    logical :: need_mslp, &
+               need_relhum_50, need_relhum_100, need_relhum_200, need_relhum_250, need_relhum_500, need_relhum_700, need_relhum_850, need_relhum_925, &
+               need_dewpoint_50, need_dewpoint_100, need_dewpoint_200, need_dewpoint_250, need_dewpoint_500, need_dewpoint_700, need_dewpoint_850, need_dewpoint_925, &
+               need_temp_50, need_temp_100, need_temp_200, need_temp_250, need_temp_500, need_temp_700, need_temp_850, need_temp_925, &
+               need_height_50, need_height_100, need_height_200, need_height_250, need_height_500, need_height_700, need_height_850, need_height_925, &
+               need_uzonal_50, need_uzonal_100, need_uzonal_200, need_uzonal_250, need_uzonal_500, need_uzonal_700, need_uzonal_850, need_uzonal_925, &
+               need_umeridional_50, need_umeridional_100, need_umeridional_200, need_umeridional_250, need_umeridional_500, need_umeridional_700, need_umeridional_850, need_umeridional_925, &
+               need_w_50, need_w_100, need_w_200, need_w_250, need_w_500, need_w_700, need_w_850, need_w_925, &
+               need_vorticity_50, need_vorticity_100, need_vorticity_200, need_vorticity_250, need_vorticity_500, need_vorticity_700, need_vorticity_850, need_vorticity_925, &
+               need_t_isobaric, need_z_isobaric, need_meanT_500_300
+    logical :: need_temp, need_relhum, need_dewpoint, need_w, need_uzonal, need_umeridional, need_vorticity, need_height
 
 
     contains
@@ -61,70 +52,22 @@ module mpas_isobaric_diagnostics
     !>  saving pointers to pools that are used in the computation of diagnostics.
     !
     !-----------------------------------------------------------------------
-    subroutine isobaric_diagnostics_setup(configs, all_pools, simulation_clock)
+    subroutine isobaric_diagnostics_setup(all_pools, simulation_clock)
 
         use mpas_derived_types, only : MPAS_pool_type, MPAS_clock_type
         use mpas_pool_routines, only : mpas_pool_get_subpool
 
         implicit none
 
-        type (MPAS_pool_type), pointer :: configs
         type (MPAS_pool_type), pointer :: all_pools
         type (MPAS_clock_type), pointer :: simulation_clock
-
-        character(len=StrKIND), pointer :: micropScheme, convectionScheme, pblScheme
 
         clock => simulation_clock
 
         call mpas_pool_get_subpool(all_pools, 'mesh', mesh)
         call mpas_pool_get_subpool(all_pools, 'state', state)
         call mpas_pool_get_subpool(all_pools, 'diag', diag)
-        call mpas_pool_get_subpool(all_pools, 'diag_physics', diag_physics)
-#ifdef DO_PHYSICS
-        call mpas_pool_get_subpool(all_pools, 'tend_physics', tend_physics)
-#endif
-
-        call mpas_pool_get_config(configs, 'config_microp_scheme', micropScheme)
-        call mpas_pool_get_config(configs, 'config_convection_scheme', convectionScheme)
-        call mpas_pool_get_config(configs, 'config_pbl_scheme', pblScheme)
-
-        if (.not. associated(micropScheme)) then
-            call mpas_log_write('config_microp_scheme is not a namelist option...')
-            return
-        end if
-
-        if (.not. associated(convectionScheme)) then
-            call mpas_log_write('config_convection_scheme is not a namelist option...')
-            return
-        end if
-
-        if (.not. associated(pblScheme)) then
-            call mpas_log_write('config_pbl_scheme is not a namelist option...')
-            return
-        end if        
-
-        if (trim(micropScheme) == "mp_thompson") then
-           need_mp_thompson = .true.
-        else
-           need_mp_thompson = .false.
-        endif
-
-        if (trim(convectionScheme) == "cu_grell_freitas") then
-           need_cu_grell_freitas = .true.
-        else
-           need_cu_grell_freitas = .false.
-        endif
-
-        if (trim(pblScheme) == "bl_mynn") then
-           need_bl_mynn = .true.
-        else
-           need_bl_mynn = .false.
-        endif
-
-!        print *, "mp_thompson=", need_mp_thompson
-!        print *, "cu_grell_freitas=", need_cu_grell_freitas
-!        print *, "bl_mynn=", need_bl_mynn
-
+   
     end subroutine isobaric_diagnostics_setup
 
 
@@ -142,220 +85,337 @@ module mpas_isobaric_diagnostics
     subroutine isobaric_diagnostics_compute()
 
         use mpas_atm_diagnostics_utils, only : MPAS_field_will_be_written
- 
+
         implicit none
 
         logical :: need_any_diags
 
         need_any_diags = .false.
 
-        need_zgeo_isobaric = .false.
-        need_cldfrac_isobaric = .false.
-        need_temperature_isobaric = .false.
-        need_dewpoint_isobaric = .false.
-        need_relhum_isobaric = .false.
-        need_w_isobaric = .false.
-        need_uzonal_isobaric = .false.
-        need_umeridional_isobaric = .false.
-        need_vorticity_isobaric = .false.
-        need_height_isobaric = .false.
-        need_spechum_isobaric = .false.
-        need_omega_isobaric = .false.
-        need_rqvblten_isobaric = .false.
-        need_rthblten_isobaric = .false.
-        need_rqvcuten_isobaric = .false.
-        need_rthcuten_isobaric = .false.
-        need_rthratenlw_isobaric = .false.
-        need_rthratensw_isobaric = .false.
-        need_rucuten_isobaric = .false.
-        need_rvcuten_isobaric = .false.
-        need_rvblten_isobaric = .false.
-        need_rublten_isobaric = .false.
-        need_kzq_isobaric = .false.
-        need_kzh_isobaric = .false.
-        need_kzm_isobaric = .false.
-        need_ni_isobaric = .false.
-        need_nr_isobaric = .false.
-        need_qr_isobaric = .false.
-        need_qs_isobaric = .false.
-        need_qv_isobaric = .false.
-        need_qc_isobaric = .false.
-        need_qg_isobaric = .false.
-        need_qi_isobaric = .false.
+        need_temp = .false.
+        need_dewpoint = .false.
+        need_relhum = .false.
+        need_w = .false.
+        need_uzonal = .false.
+        need_umeridional = .false.
+        need_vorticity = .false.
+        need_height = .false.
 
         need_mslp = MPAS_field_will_be_written('mslp')
         need_any_diags = need_any_diags .or. need_mslp
-        
-
+        need_relhum_50 = MPAS_field_will_be_written('relhum_50hPa')
+        need_relhum = need_relhum .or. need_relhum_50
+        need_any_diags = need_any_diags .or. need_relhum_50
+        need_relhum_100 = MPAS_field_will_be_written('relhum_100hPa')
+        need_relhum = need_relhum .or. need_relhum_100
+        need_any_diags = need_any_diags .or. need_relhum_100
+        need_relhum_200 = MPAS_field_will_be_written('relhum_200hPa')
+        need_relhum = need_relhum .or. need_relhum_200
+        need_any_diags = need_any_diags .or. need_relhum_200
+        need_relhum_250 = MPAS_field_will_be_written('relhum_250hPa')
+        need_relhum = need_relhum .or. need_relhum_250
+        need_any_diags = need_any_diags .or. need_relhum_250
+        need_relhum_500 = MPAS_field_will_be_written('relhum_500hPa')
+        need_relhum = need_relhum .or. need_relhum_500
+        need_any_diags = need_any_diags .or. need_relhum_500
+        need_relhum_700 = MPAS_field_will_be_written('relhum_700hPa')
+        need_relhum = need_relhum .or. need_relhum_700
+        need_any_diags = need_any_diags .or. need_relhum_700
+        need_relhum_850 = MPAS_field_will_be_written('relhum_850hPa')
+        need_relhum = need_relhum .or. need_relhum_850
+        need_any_diags = need_any_diags .or. need_relhum_850
+        need_relhum_925 = MPAS_field_will_be_written('relhum_925hPa')
+        need_relhum = need_relhum .or. need_relhum_925
+        need_any_diags = need_any_diags .or. need_relhum_925
+        need_dewpoint_50 = MPAS_field_will_be_written('dewpoint_50hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_50
+        need_any_diags = need_any_diags .or. need_dewpoint_50
+        need_dewpoint_100 = MPAS_field_will_be_written('dewpoint_100hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_100
+        need_any_diags = need_any_diags .or. need_dewpoint_100
+        need_dewpoint_200 = MPAS_field_will_be_written('dewpoint_200hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_200
+        need_any_diags = need_any_diags .or. need_dewpoint_200
+        need_dewpoint_250 = MPAS_field_will_be_written('dewpoint_250hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_250
+        need_any_diags = need_any_diags .or. need_dewpoint_250
+        need_dewpoint_500 = MPAS_field_will_be_written('dewpoint_500hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_500
+        need_any_diags = need_any_diags .or. need_dewpoint_500
+        need_dewpoint_700 = MPAS_field_will_be_written('dewpoint_700hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_700
+        need_any_diags = need_any_diags .or. need_dewpoint_700
+        need_dewpoint_850 = MPAS_field_will_be_written('dewpoint_850hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_850
+        need_any_diags = need_any_diags .or. need_dewpoint_850
+        need_dewpoint_925 = MPAS_field_will_be_written('dewpoint_925hPa')
+        need_dewpoint = need_dewpoint .or. need_dewpoint_925
+        need_any_diags = need_any_diags .or. need_dewpoint_925
+        need_temp_50 = MPAS_field_will_be_written('temperature_50hPa')
+        need_temp = need_temp .or. need_temp_50
+        need_any_diags = need_any_diags .or. need_temp_50
+        need_temp_100 = MPAS_field_will_be_written('temperature_100hPa')
+        need_temp = need_temp .or. need_temp_100
+        need_any_diags = need_any_diags .or. need_temp_100
+        need_temp_200 = MPAS_field_will_be_written('temperature_200hPa')
+        need_temp = need_temp .or. need_temp_200
+        need_any_diags = need_any_diags .or. need_temp_200
+        need_temp_250 = MPAS_field_will_be_written('temperature_250hPa')
+        need_temp = need_temp .or. need_temp_250
+        need_any_diags = need_any_diags .or. need_temp_250
+        need_temp_500 = MPAS_field_will_be_written('temperature_500hPa')
+        need_temp = need_temp .or. need_temp_500
+        need_any_diags = need_any_diags .or. need_temp_500
+        need_temp_700 = MPAS_field_will_be_written('temperature_700hPa')
+        need_temp = need_temp .or. need_temp_700
+        need_any_diags = need_any_diags .or. need_temp_700
+        need_temp_850 = MPAS_field_will_be_written('temperature_850hPa')
+        need_temp = need_temp .or. need_temp_850
+        need_any_diags = need_any_diags .or. need_temp_850
+        need_temp_925 = MPAS_field_will_be_written('temperature_925hPa')
+        need_temp = need_temp .or. need_temp_925
+        need_any_diags = need_any_diags .or. need_temp_925
+        need_height_50 = MPAS_field_will_be_written('height_50hPa')
+        need_height = need_height .or. need_height_50
+        need_any_diags = need_any_diags .or. need_height_50
+        need_height_100 = MPAS_field_will_be_written('height_100hPa')
+        need_height = need_height .or. need_height_100
+        need_any_diags = need_any_diags .or. need_height_100
+        need_height_200 = MPAS_field_will_be_written('height_200hPa')
+        need_height = need_height .or. need_height_200
+        need_any_diags = need_any_diags .or. need_height_200
+        need_height_250 = MPAS_field_will_be_written('height_250hPa')
+        need_height = need_height .or. need_height_250
+        need_any_diags = need_any_diags .or. need_height_250
+        need_height_500 = MPAS_field_will_be_written('height_500hPa')
+        need_height = need_height .or. need_height_500
+        need_any_diags = need_any_diags .or. need_height_500
+        need_height_700 = MPAS_field_will_be_written('height_700hPa')
+        need_height = need_height .or. need_height_700
+        need_any_diags = need_any_diags .or. need_height_700
+        need_height_850 = MPAS_field_will_be_written('height_850hPa')
+        need_height = need_height .or. need_height_850
+        need_any_diags = need_any_diags .or. need_height_850
+        need_height_925 = MPAS_field_will_be_written('height_925hPa')
+        need_height = need_height .or. need_height_925
+        need_any_diags = need_any_diags .or. need_height_925
+        need_uzonal_50 = MPAS_field_will_be_written('uzonal_50hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_50
+        need_any_diags = need_any_diags .or. need_uzonal_50
+        need_uzonal_100 = MPAS_field_will_be_written('uzonal_100hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_100
+        need_any_diags = need_any_diags .or. need_uzonal_100
+        need_uzonal_200 = MPAS_field_will_be_written('uzonal_200hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_200
+        need_any_diags = need_any_diags .or. need_uzonal_200
+        need_uzonal_250 = MPAS_field_will_be_written('uzonal_250hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_250
+        need_any_diags = need_any_diags .or. need_uzonal_250
+        need_uzonal_500 = MPAS_field_will_be_written('uzonal_500hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_500
+        need_any_diags = need_any_diags .or. need_uzonal_500
+        need_uzonal_700 = MPAS_field_will_be_written('uzonal_700hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_700
+        need_any_diags = need_any_diags .or. need_uzonal_700
+        need_uzonal_850 = MPAS_field_will_be_written('uzonal_850hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_850
+        need_any_diags = need_any_diags .or. need_uzonal_850
+        need_uzonal_925 = MPAS_field_will_be_written('uzonal_925hPa')
+        need_uzonal = need_uzonal .or. need_uzonal_925
+        need_any_diags = need_any_diags .or. need_uzonal_925
+        need_umeridional_50 = MPAS_field_will_be_written('umeridional_50hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_50
+        need_any_diags = need_any_diags .or. need_umeridional_50
+        need_umeridional_100 = MPAS_field_will_be_written('umeridional_100hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_100
+        need_any_diags = need_any_diags .or. need_umeridional_100
+        need_umeridional_200 = MPAS_field_will_be_written('umeridional_200hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_200
+        need_any_diags = need_any_diags .or. need_umeridional_200
+        need_umeridional_250 = MPAS_field_will_be_written('umeridional_250hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_250
+        need_any_diags = need_any_diags .or. need_umeridional_250
+        need_umeridional_500 = MPAS_field_will_be_written('umeridional_500hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_500
+        need_any_diags = need_any_diags .or. need_umeridional_500
+        need_umeridional_700 = MPAS_field_will_be_written('umeridional_700hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_700
+        need_any_diags = need_any_diags .or. need_umeridional_700
+        need_umeridional_850 = MPAS_field_will_be_written('umeridional_850hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_850
+        need_any_diags = need_any_diags .or. need_umeridional_850
+        need_umeridional_925 = MPAS_field_will_be_written('umeridional_925hPa')
+        need_umeridional = need_umeridional .or. need_umeridional_925
+        need_any_diags = need_any_diags .or. need_umeridional_925
+        need_w_50 = MPAS_field_will_be_written('w_50hPa')
+        need_w = need_w .or. need_w_50
+        need_any_diags = need_any_diags .or. need_w_50
+        need_w_100 = MPAS_field_will_be_written('w_100hPa')
+        need_w = need_w .or. need_w_100
+        need_any_diags = need_any_diags .or. need_w_100
+        need_w_200 = MPAS_field_will_be_written('w_200hPa')
+        need_w = need_w .or. need_w_200
+        need_any_diags = need_any_diags .or. need_w_200
+        need_w_250 = MPAS_field_will_be_written('w_250hPa')
+        need_w = need_w .or. need_w_250
+        need_any_diags = need_any_diags .or. need_w_250
+        need_w_500 = MPAS_field_will_be_written('w_500hPa')
+        need_w = need_w .or. need_w_500
+        need_any_diags = need_any_diags .or. need_w_500
+        need_w_700 = MPAS_field_will_be_written('w_700hPa')
+        need_w = need_w .or. need_w_700
+        need_any_diags = need_any_diags .or. need_w_700
+        need_w_850 = MPAS_field_will_be_written('w_850hPa')
+        need_w = need_w .or. need_w_850
+        need_any_diags = need_any_diags .or. need_w_850
+        need_w_925 = MPAS_field_will_be_written('w_925hPa')
+        need_w = need_w .or. need_w_925
+        need_any_diags = need_any_diags .or. need_w_925
+        need_vorticity_50 = MPAS_field_will_be_written('vorticity_50hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_50
+        need_any_diags = need_any_diags .or. need_vorticity_50
+        need_vorticity_100 = MPAS_field_will_be_written('vorticity_100hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_100
+        need_any_diags = need_any_diags .or. need_vorticity_100
+        need_vorticity_200 = MPAS_field_will_be_written('vorticity_200hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_200
+        need_any_diags = need_any_diags .or. need_vorticity_200
+        need_vorticity_250 = MPAS_field_will_be_written('vorticity_250hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_250
+        need_any_diags = need_any_diags .or. need_vorticity_250
+        need_vorticity_500 = MPAS_field_will_be_written('vorticity_500hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_500
+        need_any_diags = need_any_diags .or. need_vorticity_500
+        need_vorticity_700 = MPAS_field_will_be_written('vorticity_700hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_700
+        need_any_diags = need_any_diags .or. need_vorticity_700
+        need_vorticity_850 = MPAS_field_will_be_written('vorticity_850hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_850
+        need_any_diags = need_any_diags .or. need_vorticity_850
+        need_vorticity_925 = MPAS_field_will_be_written('vorticity_925hPa')
+        need_vorticity = need_vorticity .or. need_vorticity_925
+        need_any_diags = need_any_diags .or. need_vorticity_925
         need_t_isobaric = MPAS_field_will_be_written('t_isobaric')
         need_any_diags = need_any_diags .or. need_t_isobaric
         need_z_isobaric = MPAS_field_will_be_written('z_isobaric')
         need_any_diags = need_any_diags .or. need_z_isobaric
-        need_u_isobaric = MPAS_field_will_be_written('uvel_isobaric')
-        need_any_diags = need_any_diags .or. need_u_isobaric
         need_meanT_500_300 = MPAS_field_will_be_written('meanT_500_300')
         need_any_diags = need_any_diags .or. need_meanT_500_300
-        need_zgeo_isobaric = MPAS_field_will_be_written('zgeo_isobaric')
-        need_any_diags = need_any_diags .or. need_zgeo_isobaric
-
-
-        need_cldfrac_isobaric = MPAS_field_will_be_written('cldfrac_isobaric')
-        need_any_diags = need_any_diags .or. need_cldfrac_isobaric
-        need_temperature_isobaric = MPAS_field_will_be_written('temperature_isobaric')
-        need_any_diags = need_any_diags .or. need_temperature_isobaric
-        need_dewpoint_isobaric = MPAS_field_will_be_written('dewpoint_isobaric')
-        need_any_diags = need_any_diags .or. need_dewpoint_isobaric
-        need_relhum_isobaric = MPAS_field_will_be_written('relhum_isobaric')
-        need_any_diags = need_any_diags .or. need_relhum_isobaric
-        need_w_isobaric = MPAS_field_will_be_written('w_isobaric')
-        need_any_diags = need_any_diags .or. need_w_isobaric
-        need_uzonal_isobaric = MPAS_field_will_be_written('uzonal_isobaric')
-        need_any_diags = need_any_diags .or. need_uzonal_isobaric
-        need_umeridional_isobaric = MPAS_field_will_be_written('umeridional_isobaric')
-        need_any_diags = need_any_diags .or. need_umeridional_isobaric
-        need_vorticity_isobaric = MPAS_field_will_be_written('vorticity_isobaric')
-        need_any_diags = need_any_diags .or. need_vorticity_isobaric
-        need_height_isobaric = MPAS_field_will_be_written('height_isobaric')
-        need_any_diags = need_any_diags .or. need_height_isobaric
-        need_spechum_isobaric = MPAS_field_will_be_written('spechum_isobaric')
-        need_any_diags = need_any_diags .or. need_spechum_isobaric
-        need_omega_isobaric = MPAS_field_will_be_written('omega_isobaric')
-        need_any_diags = need_any_diags .or. need_omega_isobaric
-        need_rqvblten_isobaric = MPAS_field_will_be_written('rqvblten_isobaric')
-        need_any_diags = need_any_diags .or. need_rqvblten_isobaric
-        need_rthblten_isobaric = MPAS_field_will_be_written('rthblten_isobaric')
-        need_any_diags = need_any_diags .or. need_rthblten_isobaric
-        need_rqvcuten_isobaric = MPAS_field_will_be_written('rqvcuten_isobaric')
-        need_any_diags = need_any_diags .or. need_rqvcuten_isobaric
-        need_rthcuten_isobaric = MPAS_field_will_be_written('rthcuten_isobaric')
-        need_any_diags = need_any_diags .or. need_rthcuten_isobaric
-        need_rthratenlw_isobaric = MPAS_field_will_be_written('rthratenlw_isobaric')
-        need_any_diags = need_any_diags .or. need_rthratenlw_isobaric
-        need_rthratensw_isobaric = MPAS_field_will_be_written('rthratensw_isobaric')
-        need_any_diags = need_any_diags .or. need_rthratensw_isobaric
-        need_rucuten_isobaric = MPAS_field_will_be_written('rucuten_isobaric')
-        need_any_diags = need_any_diags .or. need_rucuten_isobaric
-        need_rvcuten_isobaric = MPAS_field_will_be_written('rvcuten_isobaric')
-        need_any_diags = need_any_diags .or. need_rvcuten_isobaric
-        need_rvblten_isobaric = MPAS_field_will_be_written('rvblten_isobaric')
-        need_any_diags = need_any_diags .or. need_rvblten_isobaric
-        need_rublten_isobaric = MPAS_field_will_be_written('rublten_isobaric')
-        need_any_diags = need_any_diags .or. need_rublten_isobaric
-        need_kzq_isobaric = MPAS_field_will_be_written('kzq_isobaric')
-        need_any_diags = need_any_diags .or. need_kzq_isobaric
-        need_kzh_isobaric = MPAS_field_will_be_written('kzh_isobaric')
-        need_any_diags = need_any_diags .or. need_kzh_isobaric
-        need_kzm_isobaric = MPAS_field_will_be_written('kzm_isobaric')
-        need_any_diags = need_any_diags .or. need_kzm_isobaric
-        need_ni_isobaric = MPAS_field_will_be_written('ni_isobaric')
-        need_any_diags = need_any_diags .or. need_ni_isobaric
-        need_nr_isobaric = MPAS_field_will_be_written('nr_isobaric')
-        need_any_diags = need_any_diags .or. need_nr_isobaric
-        need_qr_isobaric = MPAS_field_will_be_written('qr_isobaric')
-        need_any_diags = need_any_diags .or. need_qr_isobaric
-        need_qs_isobaric = MPAS_field_will_be_written('qs_isobaric')
-        need_any_diags = need_any_diags .or. need_qs_isobaric
-        need_qv_isobaric = MPAS_field_will_be_written('qv_isobaric')
-        need_any_diags = need_any_diags .or. need_qv_isobaric
-        need_qc_isobaric = MPAS_field_will_be_written('qc_isobaric')
-        need_any_diags = need_any_diags .or. need_qc_isobaric
-        need_qg_isobaric = MPAS_field_will_be_written('qg_isobaric')
-        need_any_diags = need_any_diags .or. need_qg_isobaric
-        need_qi_isobaric = MPAS_field_will_be_written('qi_isobaric')
-        need_any_diags = need_any_diags .or. need_qi_isobaric
-
-!        print *, "mp_thompson2=", need_mp_thompson
-!        print *, "cu_grell_freitas2=", need_cu_grell_freitas
-!        print *, "bl_mynn2=", need_bl_mynn
 
         if (need_any_diags) then
-            call interp_diagnostics(mesh, state, 1, diag, diag_physics, tend_physics)
+            call interp_diagnostics(mesh, state, 1, diag)
         end if
    
     end subroutine isobaric_diagnostics_compute
 
 
    !==================================================================================================
-    subroutine interp_diagnostics(mesh, state, time_lev, diag, diag_physics, tend_physics)
+    subroutine interp_diagnostics(mesh, state, time_lev, diag)
    !==================================================================================================
 
        !input arguments:
-        type (mpas_pool_type), intent(in) :: mesh
+        type (mpas_pool_type), intent(in)  :: mesh
         type (mpas_pool_type), intent(in) :: state
         integer, intent(in) :: time_lev              ! which time level to use from state
        
        !inout arguments:
         type (mpas_pool_type), intent(inout) :: diag
-        type (mpas_pool_type), intent(inout) :: diag_physics
-        type (mpas_pool_type), intent(inout) :: tend_physics
        
        !local variables:
-
-        integer :: nIsoLevelsU
         integer :: iCell,iVert,iVertD,k,kk
         integer, pointer :: nCells, nCellsSolve, nVertLevels, nVertices, vertexDegree, nIsoLevelsT, nIsoLevelsZ
         integer :: nVertLevelsP1
-        integer, pointer :: index_qv, index_ni, index_nr, num_scalars, index_qr, index_qs, index_qc, index_qg, index_qi
+        integer, pointer :: index_qv, num_scalars
         integer, dimension(:,:), pointer :: cellsOnVertex
-
+       
         type (field2DReal), pointer:: pressure_p_field
        
-        real (kind=RKIND), dimension(:), pointer :: areaTriangle, latCell
+        real (kind=RKIND), dimension(:), pointer :: areaTriangle
         real (kind=RKIND), dimension(:,:), pointer :: kiteAreasOnVertex
-
-        real (kind=RKIND), dimension(:,:), pointer :: rho
+        
         real (kind=RKIND), dimension(:,:), pointer :: exner, height
         real (kind=RKIND), dimension(:,:), pointer :: pressure_b, pressure_p 
         real (kind=RKIND), dimension(:,:), pointer :: relhum, theta_m, vorticity
         real (kind=RKIND), dimension(:,:), pointer :: umeridional, uzonal, vvel
-        real (kind=RKIND), dimension(:,:), pointer :: rqvblten, rqvcuten, rthratenlw, rthratensw, rthcuten,rthblten
-        real (kind=RKIND), dimension(:,:), pointer :: rucuten, rublten
-        real (kind=RKIND), dimension(:,:), pointer :: rvcuten, rvblten
-        real (kind=RKIND), dimension(:,:), pointer :: cldfrac
-        real (kind=RKIND), dimension(:,:), pointer :: kzq, kzh, kzm
         real (kind=RKIND), dimension(:,:,:), pointer :: scalars
        
         real (kind=RKIND), dimension(:), pointer :: t_iso_levels
         real (kind=RKIND), dimension(:), pointer :: z_iso_levels
-        real (kind=RKIND), dimension(:  ), pointer :: u_iso_levels
         real (kind=RKIND), dimension(:,:), pointer :: t_isobaric
         real (kind=RKIND), dimension(:,:), pointer :: z_isobaric
         real (kind=RKIND), dimension(:), pointer :: meanT_500_300
-        real (kind=RKIND), dimension(:,:), pointer :: zgeo_isobaric
-
-        real (kind=RKIND), dimension(:,:), pointer :: cldfrac_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: temperature_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: dewpoint_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: relhum_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: w_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: uzonal_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: umeridional_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: vorticity_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: height_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: spechum_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: omega_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rqvblten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rthblten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rqvcuten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rthcuten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rthratenlw_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rthratensw_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rucuten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rvcuten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rvblten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: rublten_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: kzq_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: kzh_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: kzm_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: ni_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: nr_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: qr_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: qs_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: qv_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: qc_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: qg_isobaric
-        real (kind=RKIND), dimension(:,:), pointer :: qi_isobaric
-         
+       
+        real (kind=RKIND), dimension(:), pointer :: temperature_50hPa
+        real (kind=RKIND), dimension(:), pointer :: temperature_100hPa
+        real (kind=RKIND), dimension(:), pointer :: temperature_200hPa
+        real (kind=RKIND), dimension(:), pointer :: temperature_250hPa
+        real (kind=RKIND), dimension(:), pointer :: temperature_500hPa
+        real (kind=RKIND), dimension(:), pointer :: temperature_700hPa
+        real (kind=RKIND), dimension(:), pointer :: temperature_850hPa
+        real (kind=RKIND), dimension(:), pointer :: temperature_925hPa
+       
+        real (kind=RKIND), dimension(:), pointer :: relhum_50hPa
+        real (kind=RKIND), dimension(:), pointer :: relhum_100hPa
+        real (kind=RKIND), dimension(:), pointer :: relhum_200hPa
+        real (kind=RKIND), dimension(:), pointer :: relhum_250hPa
+        real (kind=RKIND), dimension(:), pointer :: relhum_500hPa
+        real (kind=RKIND), dimension(:), pointer :: relhum_700hPa
+        real (kind=RKIND), dimension(:), pointer :: relhum_850hPa
+        real (kind=RKIND), dimension(:), pointer :: relhum_925hPa
+       
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_50hPa
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_100hPa
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_200hPa
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_250hPa
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_500hPa
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_700hPa
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_850hPa
+        real (kind=RKIND), dimension(:), pointer :: dewpoint_925hPa
+       
+        real (kind=RKIND), dimension(:), pointer :: uzonal_50hPa
+        real (kind=RKIND), dimension(:), pointer :: uzonal_100hPa
+        real (kind=RKIND), dimension(:), pointer :: uzonal_200hPa
+        real (kind=RKIND), dimension(:), pointer :: uzonal_250hPa
+        real (kind=RKIND), dimension(:), pointer :: uzonal_500hPa
+        real (kind=RKIND), dimension(:), pointer :: uzonal_700hPa
+        real (kind=RKIND), dimension(:), pointer :: uzonal_850hPa
+        real (kind=RKIND), dimension(:), pointer :: uzonal_925hPa
+       
+        real (kind=RKIND), dimension(:), pointer :: umeridional_50hPa
+        real (kind=RKIND), dimension(:), pointer :: umeridional_100hPa
+        real (kind=RKIND), dimension(:), pointer :: umeridional_200hPa
+        real (kind=RKIND), dimension(:), pointer :: umeridional_250hPa
+        real (kind=RKIND), dimension(:), pointer :: umeridional_500hPa
+        real (kind=RKIND), dimension(:), pointer :: umeridional_700hPa
+        real (kind=RKIND), dimension(:), pointer :: umeridional_850hPa
+        real (kind=RKIND), dimension(:), pointer :: umeridional_925hPa
+       
+        real (kind=RKIND), dimension(:), pointer :: height_50hPa
+        real (kind=RKIND), dimension(:), pointer :: height_100hPa
+        real (kind=RKIND), dimension(:), pointer :: height_200hPa
+        real (kind=RKIND), dimension(:), pointer :: height_250hPa
+        real (kind=RKIND), dimension(:), pointer :: height_500hPa
+        real (kind=RKIND), dimension(:), pointer :: height_700hPa
+        real (kind=RKIND), dimension(:), pointer :: height_850hPa
+        real (kind=RKIND), dimension(:), pointer :: height_925hPa
+       
+        real (kind=RKIND), dimension(:), pointer :: w_50hPa
+        real (kind=RKIND), dimension(:), pointer :: w_100hPa
+        real (kind=RKIND), dimension(:), pointer :: w_200hPa
+        real (kind=RKIND), dimension(:), pointer :: w_250hPa
+        real (kind=RKIND), dimension(:), pointer :: w_500hPa
+        real (kind=RKIND), dimension(:), pointer :: w_700hPa
+        real (kind=RKIND), dimension(:), pointer :: w_850hPa
+        real (kind=RKIND), dimension(:), pointer :: w_925hPa
+       
+        real (kind=RKIND), dimension(:), pointer :: vorticity_50hPa
+        real (kind=RKIND), dimension(:), pointer :: vorticity_100hPa
+        real (kind=RKIND), dimension(:), pointer :: vorticity_200hPa
+        real (kind=RKIND), dimension(:), pointer :: vorticity_250hPa
+        real (kind=RKIND), dimension(:), pointer :: vorticity_500hPa
+        real (kind=RKIND), dimension(:), pointer :: vorticity_700hPa
+        real (kind=RKIND), dimension(:), pointer :: vorticity_850hPa
+        real (kind=RKIND), dimension(:), pointer :: vorticity_925hPa
        
         real (kind=RKIND) :: evp
        
@@ -364,15 +424,13 @@ module mpas_isobaric_diagnostics
         real (kind=RKIND), dimension(:), pointer :: mslp
        
         real (kind=RKIND), dimension(:,:), allocatable :: pressure, pressureCp1, pressure2, pressure_v, temperature
-        real (kind=RKIND), dimension(:,:), allocatable :: dewpoint, spechum
+        real (kind=RKIND), dimension(:,:), allocatable :: dewpoint
        
        !local interpolated fields:
         integer :: nIntP
         real (kind=RKIND) :: w1,w2,z0,z1,z2
         real (kind=RKIND), dimension(:,:), allocatable :: field_in,press_in
         real (kind=RKIND), dimension(:,:), allocatable :: field_interp,press_interp
-        
-        parameter (grav=9.80616) !LFR
         
        !--------------------------------------------------------------------------------------------------
        
@@ -387,13 +445,6 @@ module mpas_isobaric_diagnostics
         call mpas_pool_get_dimension(mesh, 'nIsoLevelsT', nIsoLevelsT)
         call mpas_pool_get_dimension(mesh, 'nIsoLevelsZ', nIsoLevelsZ)
         call mpas_pool_get_dimension(state, 'index_qv', index_qv)
-        call mpas_pool_get_dimension(state, 'index_ni', index_ni)
-        call mpas_pool_get_dimension(state, 'index_nr', index_nr)
-        call mpas_pool_get_dimension(state, 'index_qr', index_qr)
-        call mpas_pool_get_dimension(state, 'index_qs', index_qs)
-        call mpas_pool_get_dimension(state, 'index_qc', index_qc)
-        call mpas_pool_get_dimension(state, 'index_qg', index_qg)
-        call mpas_pool_get_dimension(state, 'index_qi', index_qi)
         call mpas_pool_get_dimension(state, 'num_scalars', num_scalars)
        
         nVertLevelsP1 = nVertLevels + 1
@@ -402,31 +453,11 @@ module mpas_isobaric_diagnostics
         call mpas_pool_get_array(mesh, 'areaTriangle', areaTriangle)
         call mpas_pool_get_array(mesh, 'kiteAreasOnVertex', kiteAreasOnVertex)
        
-        call mpas_pool_get_array(mesh, 'latCell', latCell)
         call mpas_pool_get_array(mesh, 'zgrid', height)
         call mpas_pool_get_array(state, 'w', vvel, time_lev)
         call mpas_pool_get_array(state, 'theta_m', theta_m, time_lev)
         call mpas_pool_get_array(state, 'scalars', scalars, time_lev)
-
-        call mpas_pool_get_array(tend_physics, 'rqvcuten', rqvcuten)
-        call mpas_pool_get_array(tend_physics, 'rthcuten', rthcuten)
-
-        call mpas_pool_get_array(tend_physics, 'rqvblten', rqvblten)
-        call mpas_pool_get_array(tend_physics, 'rthblten', rthblten)
-
-        call mpas_pool_get_array(tend_physics, 'rthratenlw', rthratenlw)
-        call mpas_pool_get_array(tend_physics, 'rthratensw', rthratensw)
-        call mpas_pool_get_array(tend_physics, 'rucuten', rucuten)
-        call mpas_pool_get_array(tend_physics, 'rvcuten', rvcuten)
-        call mpas_pool_get_array(tend_physics, 'rvblten', rvblten)
-        call mpas_pool_get_array(tend_physics, 'rublten', rublten)
-
-        call mpas_pool_get_array(diag_physics, 'kzq', kzq)
-        call mpas_pool_get_array(diag_physics, 'kzh', kzh)
-        call mpas_pool_get_array(diag_physics, 'kzm', kzm)
-        call mpas_pool_get_array(diag_physics,'cldfrac',cldfrac)
-
-
+       
         call mpas_pool_get_field(diag, 'pressure_p', pressure_p_field)
         call mpas_dmpar_exch_halo_field(pressure_p_field)
        
@@ -437,51 +468,84 @@ module mpas_isobaric_diagnostics
         call mpas_pool_get_array(diag, 'uReconstructMeridional', umeridional)
         call mpas_pool_get_array(diag, 'uReconstructZonal', uzonal)
         call mpas_pool_get_array(diag, 'relhum', relhum)
-        call mpas_pool_get_array(diag, 'rho', rho) !LFR
-   
-        call mpas_pool_get_array(diag, 'zgeo_isobaric', zgeo_isobaric)
-    
+       
         call mpas_pool_get_array(diag, 't_iso_levels', t_iso_levels)
-        call mpas_pool_get_array(diag, 'u_iso_levels', u_iso_levels)
         call mpas_pool_get_array(diag, 'z_iso_levels', z_iso_levels)
         call mpas_pool_get_array(diag, 't_isobaric', t_isobaric)
         call mpas_pool_get_array(diag, 'z_isobaric', z_isobaric)
         call mpas_pool_get_array(diag, 'meanT_500_300', meanT_500_300)
-
-        call mpas_pool_get_array(diag, 'cldfrac_isobaric', cldfrac_isobaric)
-        call mpas_pool_get_array(diag, 'temperature_isobaric', temperature_isobaric)
-        call mpas_pool_get_array(diag, 'dewpoint_isobaric', dewpoint_isobaric)
-        call mpas_pool_get_array(diag, 'relhum_isobaric', relhum_isobaric)
-        call mpas_pool_get_array(diag, 'w_isobaric', w_isobaric)
-        call mpas_pool_get_array(diag, 'uzonal_isobaric', uzonal_isobaric)
-        call mpas_pool_get_array(diag, 'umeridional_isobaric', umeridional_isobaric)
-        call mpas_pool_get_array(diag, 'vorticity_isobaric', vorticity_isobaric)
-        call mpas_pool_get_array(diag, 'height_isobaric', height_isobaric)
-        call mpas_pool_get_array(diag, 'spechum_isobaric', spechum_isobaric)
-        call mpas_pool_get_array(diag, 'omega_isobaric', omega_isobaric)
-        call mpas_pool_get_array(diag, 'rqvblten_isobaric', rqvblten_isobaric)
-        call mpas_pool_get_array(diag, 'rthblten_isobaric', rthblten_isobaric)
-        call mpas_pool_get_array(diag, 'rqvcuten_isobaric', rqvcuten_isobaric)
-        call mpas_pool_get_array(diag, 'rthcuten_isobaric', rthcuten_isobaric)
-        call mpas_pool_get_array(diag, 'rthratenlw_isobaric', rthratenlw_isobaric)
-        call mpas_pool_get_array(diag, 'rthratensw_isobaric', rthratensw_isobaric)
-        call mpas_pool_get_array(diag, 'rucuten_isobaric', rucuten_isobaric)
-        call mpas_pool_get_array(diag, 'rvcuten_isobaric', rvcuten_isobaric)
-        call mpas_pool_get_array(diag, 'rvblten_isobaric', rvblten_isobaric)
-        call mpas_pool_get_array(diag, 'rublten_isobaric', rublten_isobaric)
-        call mpas_pool_get_array(diag, 'kzq_isobaric', kzq_isobaric)
-        call mpas_pool_get_array(diag, 'kzh_isobaric', kzh_isobaric)
-        call mpas_pool_get_array(diag, 'kzm_isobaric', kzm_isobaric)
-        call mpas_pool_get_array(diag, 'ni_isobaric', ni_isobaric)
-        call mpas_pool_get_array(diag, 'nr_isobaric', nr_isobaric)
-        call mpas_pool_get_array(diag, 'qr_isobaric', qr_isobaric)
-        call mpas_pool_get_array(diag, 'qs_isobaric', qs_isobaric)
-        call mpas_pool_get_array(diag, 'qv_isobaric', qv_isobaric)
-        call mpas_pool_get_array(diag, 'qc_isobaric', qc_isobaric)
-        call mpas_pool_get_array(diag, 'qg_isobaric', qg_isobaric)
-        call mpas_pool_get_array(diag, 'qi_isobaric', qi_isobaric)
- 
-
+       
+        call mpas_pool_get_array(diag, 'temperature_50hPa', temperature_50hPa)
+        call mpas_pool_get_array(diag, 'temperature_100hPa', temperature_100hPa)
+        call mpas_pool_get_array(diag, 'temperature_200hPa', temperature_200hPa)
+        call mpas_pool_get_array(diag, 'temperature_250hPa', temperature_250hPa)
+        call mpas_pool_get_array(diag, 'temperature_500hPa', temperature_500hPa)
+        call mpas_pool_get_array(diag, 'temperature_700hPa', temperature_700hPa)
+        call mpas_pool_get_array(diag, 'temperature_850hPa', temperature_850hPa)
+        call mpas_pool_get_array(diag, 'temperature_925hPa', temperature_925hPa)
+       
+        call mpas_pool_get_array(diag, 'relhum_50hPa', relhum_50hPa)
+        call mpas_pool_get_array(diag, 'relhum_100hPa', relhum_100hPa)
+        call mpas_pool_get_array(diag, 'relhum_200hPa', relhum_200hPa)
+        call mpas_pool_get_array(diag, 'relhum_250hPa', relhum_250hPa)
+        call mpas_pool_get_array(diag, 'relhum_500hPa', relhum_500hPa)
+        call mpas_pool_get_array(diag, 'relhum_700hPa', relhum_700hPa)
+        call mpas_pool_get_array(diag, 'relhum_850hPa', relhum_850hPa)
+        call mpas_pool_get_array(diag, 'relhum_925hPa', relhum_925hPa)
+       
+        call mpas_pool_get_array(diag, 'dewpoint_50hPa', dewpoint_50hPa)
+        call mpas_pool_get_array(diag, 'dewpoint_100hPa', dewpoint_100hPa)
+        call mpas_pool_get_array(diag, 'dewpoint_200hPa', dewpoint_200hPa)
+        call mpas_pool_get_array(diag, 'dewpoint_250hPa', dewpoint_250hPa)
+        call mpas_pool_get_array(diag, 'dewpoint_500hPa', dewpoint_500hPa)
+        call mpas_pool_get_array(diag, 'dewpoint_700hPa', dewpoint_700hPa)
+        call mpas_pool_get_array(diag, 'dewpoint_850hPa', dewpoint_850hPa)
+        call mpas_pool_get_array(diag, 'dewpoint_925hPa', dewpoint_925hPa)
+       
+        call mpas_pool_get_array(diag, 'uzonal_50hPa', uzonal_50hPa)
+        call mpas_pool_get_array(diag, 'uzonal_100hPa', uzonal_100hPa)
+        call mpas_pool_get_array(diag, 'uzonal_200hPa', uzonal_200hPa)
+        call mpas_pool_get_array(diag, 'uzonal_250hPa', uzonal_250hPa)
+        call mpas_pool_get_array(diag, 'uzonal_500hPa', uzonal_500hPa)
+        call mpas_pool_get_array(diag, 'uzonal_700hPa', uzonal_700hPa)
+        call mpas_pool_get_array(diag, 'uzonal_850hPa', uzonal_850hPa)
+        call mpas_pool_get_array(diag, 'uzonal_925hPa', uzonal_925hPa)
+       
+        call mpas_pool_get_array(diag, 'umeridional_50hPa', umeridional_50hPa)
+        call mpas_pool_get_array(diag, 'umeridional_100hPa', umeridional_100hPa)
+        call mpas_pool_get_array(diag, 'umeridional_200hPa', umeridional_200hPa)
+        call mpas_pool_get_array(diag, 'umeridional_250hPa', umeridional_250hPa)
+        call mpas_pool_get_array(diag, 'umeridional_500hPa', umeridional_500hPa)
+        call mpas_pool_get_array(diag, 'umeridional_700hPa', umeridional_700hPa)
+        call mpas_pool_get_array(diag, 'umeridional_850hPa', umeridional_850hPa)
+        call mpas_pool_get_array(diag, 'umeridional_925hPa', umeridional_925hPa)
+       
+        call mpas_pool_get_array(diag, 'height_50hPa', height_50hPa)
+        call mpas_pool_get_array(diag, 'height_100hPa', height_100hPa)
+        call mpas_pool_get_array(diag, 'height_200hPa', height_200hPa)
+        call mpas_pool_get_array(diag, 'height_250hPa', height_250hPa)
+        call mpas_pool_get_array(diag, 'height_500hPa', height_500hPa)
+        call mpas_pool_get_array(diag, 'height_700hPa', height_700hPa)
+        call mpas_pool_get_array(diag, 'height_850hPa', height_850hPa)
+        call mpas_pool_get_array(diag, 'height_925hPa', height_925hPa)
+       
+        call mpas_pool_get_array(diag, 'w_50hPa', w_50hPa)
+        call mpas_pool_get_array(diag, 'w_100hPa', w_100hPa)
+        call mpas_pool_get_array(diag, 'w_200hPa', w_200hPa)
+        call mpas_pool_get_array(diag, 'w_250hPa', w_250hPa)
+        call mpas_pool_get_array(diag, 'w_500hPa', w_500hPa)
+        call mpas_pool_get_array(diag, 'w_700hPa', w_700hPa)
+        call mpas_pool_get_array(diag, 'w_850hPa', w_850hPa)
+        call mpas_pool_get_array(diag, 'w_925hPa', w_925hPa)
+       
+        call mpas_pool_get_array(diag, 'vorticity_50hPa', vorticity_50hPa)
+        call mpas_pool_get_array(diag, 'vorticity_100hPa', vorticity_100hPa)
+        call mpas_pool_get_array(diag, 'vorticity_200hPa', vorticity_200hPa)
+        call mpas_pool_get_array(diag, 'vorticity_250hPa', vorticity_250hPa)
+        call mpas_pool_get_array(diag, 'vorticity_500hPa', vorticity_500hPa)
+        call mpas_pool_get_array(diag, 'vorticity_700hPa', vorticity_700hPa)
+        call mpas_pool_get_array(diag, 'vorticity_850hPa', vorticity_850hPa)
+        call mpas_pool_get_array(diag, 'vorticity_925hPa', vorticity_925hPa)
        
         call mpas_pool_get_array(diag, 'mslp', mslp)
        
@@ -490,41 +554,31 @@ module mpas_isobaric_diagnostics
         if(.not.allocated(pressure2)   ) allocate(pressure2(nVertLevelsP1,nCells)   )
         if(.not.allocated(pressure_v)  ) allocate(pressure_v(nVertLevels,nVertices) )
         if(.not.allocated(temperature) ) allocate(temperature(nVertLevels,nCells)   )
-        if(.not.allocated(spechum)  ) allocate(spechum(nVertLevels,nCells)    ) !LFR
-        if(.not.allocated(dewpoint) ) allocate(dewpoint(nVertLevels,nCells)   ) 
+        if(.not.allocated(dewpoint) ) allocate(dewpoint(nVertLevels,nCells)   )
        
-        if (need_t_isobaric .or. need_zgeo_isobaric) then
-                t_iso_levels(:) = (/   100000.0,   & !EGK: surface 
-                                       92500.0,    &
-                                       85000.0,    &
-                                       77500.0,    &
-                                       70000.0,    &
-                                       50000.0,    &
-                                       40000.0,    &
-                                       30000.0,    &
-                                       25000.0,    &
-                                       20000.0,    &
-                                       15000.0,    &
-                                       10000.0,    &
-                                       7000.0,     &
-                                       5000.0,     &
-                                       3000.0,     &
-                                       2000.0,     &
-                                       1000.0,     &
-                                       300.0      /) !EGK: top
-              z_iso_levels = t_iso_levels
-              u_iso_levels = t_iso_levels
+        if (need_t_isobaric) then
+            t_iso_levels(1) = 30000.0
+            t_iso_levels(2) = 35000.0
+            t_iso_levels(3) = 40000.0
+            t_iso_levels(4) = 45000.0
+            t_iso_levels(5) = 50000.0
         end if
        
         if (need_z_isobaric) then
-           z_iso_levels = t_iso_levels
-            nIsoLevelsZ = size(z_iso_levels)
-        end if
-
-        if (need_u_isobaric) then
-            u_iso_levels = t_iso_levels
-            nIsoLevelsU = size(u_iso_levels)
-        end if
+            z_iso_levels(1)  = 30000.0
+            z_iso_levels(2)  = 35000.0
+            z_iso_levels(3)  = 40000.0
+            z_iso_levels(4)  = 45000.0
+            z_iso_levels(5)  = 50000.0
+            z_iso_levels(6)  = 55000.0
+            z_iso_levels(7)  = 60000.0
+            z_iso_levels(8)  = 65000.0
+            z_iso_levels(9)  = 70000.0
+            z_iso_levels(10) = 75000.0
+            z_iso_levels(11) = 80000.0
+            z_iso_levels(12) = 85000.0
+            z_iso_levels(13) = 90000.0
+       end if
        
        !calculation of total pressure at cell centers (at mass points):
         do iCell = 1, nCells
@@ -586,9 +640,7 @@ module mpas_isobaric_diagnostics
            enddo
         enddo
        
-        if (NEED_TEMPERATURE_ISOBARIC .or. NEED_RELHUM_ISOBARIC .or. NEED_SPECHUM_ISOBARIC &
-            .or. NEED_DEWPOINT_ISOBARIC .or. need_mslp) then
-
+        if (NEED_TEMP .or. NEED_RELHUM .or. NEED_DEWPOINT .or. need_mslp) then
            !calculation of temperature at cell centers:
             do iCell = 1,nCells
             do k = 1,nVertLevels
@@ -598,8 +650,6 @@ module mpas_isobaric_diagnostics
                 evp = pressure(k,iCell) * scalars(index_qv,k,iCell) / (scalars(index_qv,k,iCell) + 0.622_RKIND)
                 evp = max(evp, 1.0e-8_RKIND)
 
-                spechum(k,iCell) = 0.622*evp/(pressure2(k,iCell)-0.378*evp) !LFR
-
                 ! Dewpoint temperature following Bolton (1980)
                 dewpoint(k,iCell) = (243.5_RKIND * log(evp/6.112_RKIND)) / (17.67_RKIND - log(evp/6.112_RKIND))
                 dewpoint(k,iCell) = dewpoint(k,iCell) + 273.15
@@ -608,661 +658,190 @@ module mpas_isobaric_diagnostics
         end if
        
        !interpolation to fixed pressure levels for fields located at cells centers and at mass points:
-        !CR: nIntP = 22 this var should not be used any more! use nIsoLevelsT (came from registry xml)
-        
-        !CR: invertendo field_interp de (nCells,nIntP) para (nIsoLevelsT, nCells), to work in new vertical 
-        !interpolation subroutine
-        
-        if(.not.allocated(field_interp)) allocate(field_interp(nIsoLevelsT, nCells) )
-        if(.not.allocated(press_interp)) allocate(press_interp(nCells,nIsoLevelsT) ) !CR: not used!
+        nIntP = 8
+        if(.not.allocated(field_interp)) allocate(field_interp(nCells,nIntP) )
+        if(.not.allocated(press_interp)) allocate(press_interp(nCells,nIntP) )
         do iCell = 1, nCells
-           press_interp(iCell, 1) = 3.0_RKIND    !EGK: top
-           press_interp(iCell, 2) = 10.0_RKIND
-           press_interp(iCell, 3) = 20.0_RKIND
-           press_interp(iCell, 4) = 30.0_RKIND
-           press_interp(iCell, 5) = 50.0_RKIND
-           press_interp(iCell, 6) = 70.0_RKIND
-           press_interp(iCell, 7) = 100.0_RKIND
-           press_interp(iCell, 8) = 150.0_RKIND
-           press_interp(iCell, 9) = 200.0_RKIND
-           press_interp(iCell,10) = 250.0_RKIND
-           press_interp(iCell,11) = 300.0_RKIND
-           press_interp(iCell,12) = 400.0_RKIND
-           press_interp(iCell,13) = 500.0_RKIND
-           press_interp(iCell,14) = 700.0_RKIND
-           press_interp(iCell,15) = 775.0_RKIND
-           press_interp(iCell,16) = 850.0_RKIND
-           press_interp(iCell,17) = 925.0_RKIND
-           press_interp(iCell,18) = 1000.0_RKIND !EGK: surface
+           press_interp(iCell,1) = 50.0_RKIND
+           press_interp(iCell,2) = 100.0_RKIND
+           press_interp(iCell,3) = 200.0_RKIND
+           press_interp(iCell,4) = 250.0_RKIND
+           press_interp(iCell,5) = 500.0_RKIND
+           press_interp(iCell,6) = 700.0_RKIND
+           press_interp(iCell,7) = 850.0_RKIND
+           press_interp(iCell,8) = 925.0_RKIND
         enddo
        
+        if(.not.allocated(press_in)) allocate(press_in(nCells,nVertLevels))
+        do iCell = 1, nCells
+        do k = 1, nVertLevels
+           kk = nVertLevels+1-k
+           press_in(iCell,kk) = pressure(k,iCell)
+        enddo
+        enddo
        
-        if(.not.allocated(field_in)) allocate(field_in(nCells,nVertLevels)) !CR: not used any more
+        if(.not.allocated(field_in)) allocate(field_in(nCells,nVertLevels))
 
-        if (NEED_CLDFRAC_ISOBARIC) then
-         !... cldfrac:
-         
-         call VerticalInterpolation_Single ( nCells                                    , & !1
-                                             nVertLevels                               , & !2
-                                             nVertLevels                               , & !3 CR:duvida: ta certo?
-                                             nIsoLevelsT                               , & !4 CR: ta certo?
-                                             nIsoLevelsT                               , & !5 CR: ta certo?
-                                             cldfrac     (1:nVertLevels,1:nCells)      , & !6
-                                             field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                             pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                             t_iso_levels(1:nIsoLevelsT)               )   !9
-                                                
-            cldfrac_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells) 
-
-            ! call mpas_log_write('--- end interpolate cldfrac:')
-        end if
-
-
-        if (NEED_TEMPERATURE_ISOBARIC) then
+        if (NEED_TEMP) then
            !... temperature:
-
-           call VerticalInterpolation_Thermal2 ( nCells                                    , & !1
-                                                 nVertLevels                               , & !2
-                                                 nIsoLevelsT                               , & !3
-                                                 pressure2   (1:nVertLevels,1:nCells)*100.0, & !4
-                                                 temperature (1:nVertLevels,1:nCells)      , & !5
-                                                 field_interp(1:nIsoLevelsT,1:nCells)      , & !6
-                                                 t_iso_levels(1:nIsoLevelsT)               )   !7
-
-            temperature_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-            ! call mpas_log_write('--- end interpolate temperature:')
+            do iCell = 1, nCells
+            do k = 1, nVertLevels
+               kk = nVertLevels+1-k
+               field_in(iCell,kk) = temperature(k,iCell)
+            enddo
+            enddo
+            call interp_tofixed_pressure(nCells,nVertLevels,nIntP,press_in,field_in,press_interp,field_interp)
+            temperature_50hPa(1:nCells) = field_interp(1:nCells,1)
+            temperature_100hPa(1:nCells) = field_interp(1:nCells,2)
+            temperature_200hPa(1:nCells) = field_interp(1:nCells,3)
+            temperature_250hPa(1:nCells) = field_interp(1:nCells,4)
+            temperature_500hPa(1:nCells) = field_interp(1:nCells,5)
+            temperature_700hPa(1:nCells) = field_interp(1:nCells,6)
+            temperature_850hPa(1:nCells) = field_interp(1:nCells,7)
+            temperature_925hPa(1:nCells) = field_interp(1:nCells,8)
+           ! call mpas_log_write('--- end interpolate temperature:')
         end if
-
-
-        if (need_mp_thompson .eqv. .true. .or. need_bl_mynn .eqv. .true.) then
-           if (NEED_NI_ISOBARIC) then
-               !... ni:
-                
-               call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                   nVertLevels                                   , & !2
-                                                   nVertLevels                                   , & !3
-                                                   nIsoLevelsT                                   , & !4
-                                                   nIsoLevelsT                                   , & !5
-                                                   scalars(index_ni,1:nVertLevels,1:nCells)      , & !6
-                                                   field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                   pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                   t_iso_levels    (1:nIsoLevelsT)               )   !9
-                
-
-               ni_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-               ! call mpas_log_write('--- end interpolate ni:')
-            end if
-        end if
-
-        if (need_mp_thompson .eqv. .true.) then
-            if (NEED_NR_ISOBARIC) then
-               !... nr:
-                
-               call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                   nVertLevels                                   , & !2
-                                                   nVertLevels                                   , & !3
-                                                   nIsoLevelsT                                   , & !4
-                                                   nIsoLevelsT                                   , & !5
-                                                   scalars(index_nr,1:nVertLevels,1:nCells)      , & !6
-                                                   field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                   pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                   t_iso_levels    (1:nIsoLevelsT)               )   !9
-
-
-               nr_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-               ! call mpas_log_write('--- end interpolate nr:')
-            end if
-        end if
-
-         if (NEED_QR_ISOBARIC) then
-            !... qr:
-
-            call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                nVertLevels                                   , & !2
-                                                nVertLevels                                   , & !3
-                                                nIsoLevelsT                                   , & !4
-                                                nIsoLevelsT                                   , & !5
-                                                scalars(index_qr,1:nVertLevels,1:nCells)      , & !6
-                                                field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels    (1:nIsoLevelsT)               )   !9
-            
-
-            qr_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate qr:')
-        end if
-
-         if (NEED_QS_ISOBARIC) then
-            !... qs:
-
-            call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                nVertLevels                                   , & !2
-                                                nVertLevels                                   , & !3
-                                                nIsoLevelsT                                   , & !4
-                                                nIsoLevelsT                                   , & !5
-                                                scalars(index_qs,1:nVertLevels,1:nCells)      , & !6
-                                                field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels    (1:nIsoLevelsT)               )   !9
-
-            qs_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate qs:')
-        end if
-
-        if (NEED_QV_ISOBARIC) then
-           !... qv:
-
-            call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                nVertLevels                                   , & !2
-                                                nVertLevels                                   , & !3
-                                                nIsoLevelsT                                   , & !4
-                                                nIsoLevelsT                                   , & !5
-                                                scalars(index_qv,1:nVertLevels,1:nCells)      , & !6
-                                                field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels    (1:nIsoLevelsT)               )   !9
-
-            qv_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate qv:')
-        end if
-
-        if (NEED_QC_ISOBARIC) then
-           !... qc:
-
-            call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                nVertLevels                                   , & !2
-                                                nVertLevels                                   , & !3
-                                                nIsoLevelsT                                   , & !4
-                                                nIsoLevelsT                                   , & !5
-                                                scalars(index_qc,1:nVertLevels,1:nCells)      , & !6
-                                                field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels    (1:nIsoLevelsT)               )   !9
-
-            qc_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-            ! call mpas_log_write('--- end interpolate qc:')
-        end if
-
-        if (NEED_QG_ISOBARIC) then
-           !... qg:
-
-            call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                nVertLevels                                   , & !2
-                                                nVertLevels                                   , & !3
-                                                nIsoLevelsT                                   , & !4
-                                                nIsoLevelsT                                   , & !5
-                                                scalars(index_qg,1:nVertLevels,1:nCells)      , & !6
-                                                field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels    (1:nIsoLevelsT)               )   !9
-
-            qg_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate qg:')
-        end if
-
-        if (NEED_QI_ISOBARIC) then
-           !... qi:
-
-            call VerticalInterpolation_Single ( nCells                                        , & !1
-                                                nVertLevels                                   , & !2
-                                                nVertLevels                                   , & !3
-                                                nIsoLevelsT                                   , & !4
-                                                nIsoLevelsT                                   , & !5
-                                                scalars(index_qi,1:nVertLevels,1:nCells)      , & !6
-                                                field_interp    (1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2       (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels    (1:nIsoLevelsT)               )   !9
-
-            qi_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-            ! call mpas_log_write('--- end interpolate qi:')
-        end if
-
-        if (NEED_RQVBLTEN_ISOBARIC) then
-           !... rqvblten:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rqvblten    (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            rqvblten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate rqvblten:')
-        end if
-        
-
-        if (NEED_RTHBLTEN_ISOBARIC) then
-           !... rthblten:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rthblten    (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            rthblten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-            ! call mpas_log_write('--- end interpolate rthblten:')
-        end if
-
-
-        if (NEED_RQVCUTEN_ISOBARIC) then
-           !... rqvcuten:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rqvcuten    (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            rqvcuten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-            ! call mpas_log_write('--- end interpolate rqvcuten:')
-        end if
-
-
-        if (NEED_RTHCUTEN_ISOBARIC) then
-           !... rthcuten:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rthcuten    (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            rthcuten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-            ! call mpas_log_write('--- end interpolate rthcuten:')
-        end if
-
-
-        if (NEED_RTHRATENLW_ISOBARIC) then
-           !... rthratenlw:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rthratenlw  (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            rthratenlw_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate rthratenlw:')
-        end if
-
-        if (NEED_RTHRATENSW_ISOBARIC) then
-           !... rthratenlw:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rthratensw  (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               ) !9
-
-            rthratensw_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate rthratenlw:')
-        end if
-
-
-
-         if (NEED_RUCUTEN_ISOBARIC) then
-            !... rucuten:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rucuten     (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               ) !9
-
-            rucuten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate rucuten:')
-        end if
-
-         if (NEED_RVCUTEN_ISOBARIC) then
-            !... rvcuten:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rvcuten     (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8  
-                                                t_iso_levels(1:nIsoLevelsT)               ) !9
-
-            rvcuten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-          ! call mpas_log_write('--- end interpolate rvcuten:')
-        end if
-
-        if (NEED_RUBLTEN_ISOBARIC) then
-            !... rublten:
-
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rublten     (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            rublten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-          ! call mpas_log_write('--- end interpolate rublten:')
-        end if
-
-     
-        if (NEED_RVBLTEN_ISOBARIC) then
-            !... rvblten:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                rvblten     (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            rvblten_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-          ! call mpas_log_write('--- end interpolate rvblten:')
-        end if
-
-        if (NEED_RELHUM_ISOBARIC) then
+       
+       
+        if (NEED_RELHUM) then
            !... relative humidity:
-            
-!            call VerticalInterpolation_Humid ( nCells                                    , & !1
-!                                               nVertLevels                               , & !2
-!                                               nIsoLevelsT                               , & !3
-!                                               pressure2   (1:nVertLevels,1:nCells)*100.0, & !4
-!                                               relhum      (1:nVertLevels,1:nCells)      , & !5
-!                                               field_interp(1:nIsoLevelsT,1:nCells)      , & !6
-!                                               t_iso_levels(1:nIsoLevelsT)               ) !7
-
-
-!PK: New RELHUM:         
-         call VerticalInterpolation_Thermal( nCells                                        ,  &
-                                             nVertLevels                                   ,  &
-                                             nIsoLevelsT                                   ,  &
-                                             pressure2       (1:nVertLevels,1:nCells)*100.0,  &
-                                             temperature     (1:nVertLevels,1:nCells)      ,  &
-                                             scalars(index_qv,1:nVertLevels,1:nCells)      ,  &
-                                             relhum          (1:nVertLevels,1:nCells)      ,  &
-                                             t_isobaric      (1:nIsoLevelsT,1:nCells)      ,  &
-                                             field_interp    (1:nIsoLevelsT,1:nCells)      ,  &
-                                             qv_isobaric     (1:nIsoLevelsT,1:nCells)      ,  &
-                                             t_iso_levels    (1:nIsoLevelsT)               )
-
-
-                                             
-
-            relhum_isobaric(1:nIsoLevelsT,1:nCells) =  100.0 * field_interp(1:nIsoLevelsT,1:nCells)             
-            
+            do iCell = 1, nCells
+            do k = 1, nVertLevels
+               kk = nVertLevels+1-k
+               field_in(iCell,kk) = relhum(k,iCell)
+            enddo
+            enddo
+            call interp_tofixed_pressure(nCells,nVertLevels,nIntP,press_in,field_in,press_interp,field_interp)
+            relhum_50hPa(1:nCells) = field_interp(1:nCells,1)
+            relhum_100hPa(1:nCells) = field_interp(1:nCells,2)
+            relhum_200hPa(1:nCells) = field_interp(1:nCells,3)
+            relhum_250hPa(1:nCells) = field_interp(1:nCells,4)
+            relhum_500hPa(1:nCells) = field_interp(1:nCells,5)
+            relhum_700hPa(1:nCells) = field_interp(1:nCells,6)
+            relhum_850hPa(1:nCells) = field_interp(1:nCells,7)
+            relhum_925hPa(1:nCells) = field_interp(1:nCells,8)
            ! call mpas_log_write('--- end interpolate relative humidity:')
         end if
        
-        if (NEED_KZQ_ISOBARIC) then
-           !... kzq:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                kzq         (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            kzq_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate kzq:')
-        end if
-
-        if (NEED_KZH_ISOBARIC) then
-           !... kzh:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                kzh         (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            kzh_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate kzh:')
-        end if
-
-        if (NEED_KZM_ISOBARIC) then
-           !... kzm:
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                kzm         (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2   (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            kzm_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-            ! call mpas_log_write('--- end interpolate kzm:')
-        end if
-
-
-        if (NEED_DEWPOINT_ISOBARIC) then
+        if (NEED_DEWPOINT) then
            !... dewpoint
-            
-            call VerticalInterpolation_Thermal2 ( nCells                                    , & !1
-                                                  nVertLevels                               , & !2
-                                                  nIsoLevelsT                               , & !3
-                                                  pressure2   (1:nVertLevels,1:nCells)*100.0, & !4
-                                                  dewpoint    (1:nVertLevels,1:nCells)      , & !5
-                                                  field_interp(1:nIsoLevelsT,1:nCells)      , & !6
-                                                  t_iso_levels(1:nIsoLevelsT)               )   !7
-
-            dewpoint_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-            
+            do iCell = 1, nCells
+            do k = 1, nVertLevels
+               kk = nVertLevels+1-k
+               field_in(iCell,kk) = dewpoint(k,iCell)
+            enddo
+            enddo
+            call interp_tofixed_pressure(nCells,nVertLevels,nIntP,press_in,field_in,press_interp,field_interp)
+            dewpoint_50hPa(1:nCells) = field_interp(1:nCells,1)
+            dewpoint_100hPa(1:nCells) = field_interp(1:nCells,2)
+            dewpoint_200hPa(1:nCells) = field_interp(1:nCells,3)
+            dewpoint_250hPa(1:nCells) = field_interp(1:nCells,4)
+            dewpoint_500hPa(1:nCells) = field_interp(1:nCells,5)
+            dewpoint_700hPa(1:nCells) = field_interp(1:nCells,6)
+            dewpoint_850hPa(1:nCells) = field_interp(1:nCells,7)
+            dewpoint_925hPa(1:nCells) = field_interp(1:nCells,8)
            ! call mpas_log_write('--- end interpolate relative humidity:')
         end if
-        
        
-        if (NEED_UZONAL_ISOBARIC) then
+        if (NEED_UZONAL) then
            !... u zonal wind:
-
-            call VerticalInterpolation_Wind ( nCells                                    , & !1. 
-                                              nVertLevels                               , & !2. 
-                                              nIsoLevelsT                               , & !3. 
-                                              pressure2    (1:nVertLevels,1:nCells)*100.0, & !4. 
-                                              t_iso_levels(1:nIsoLevelsT)               , & !5. 
-                                              uzonal      (1:nVertLevels, 1:nCells)     , & !6. 
-                                              field_interp(1:nIsoLevelsT,1:nCells)      )   !7. 
-            
-
-            uzonal_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-
-                       ! call mpas_log_write('--- end interpolate zonal wind:')
+            do iCell = 1, nCells
+            do k = 1, nVertLevels
+               kk = nVertLevels+1-k
+               field_in(iCell,kk) = uzonal(k,iCell)
+            enddo
+            enddo
+            call interp_tofixed_pressure(nCells,nVertLevels,nIntP,press_in,field_in,press_interp,field_interp)
+            uzonal_50hPa(1:nCells) = field_interp(1:nCells,1)
+            uzonal_100hPa(1:nCells) = field_interp(1:nCells,2)
+            uzonal_200hPa(1:nCells) = field_interp(1:nCells,3)
+            uzonal_250hPa(1:nCells) = field_interp(1:nCells,4)
+            uzonal_500hPa(1:nCells) = field_interp(1:nCells,5)
+            uzonal_700hPa(1:nCells) = field_interp(1:nCells,6)
+            uzonal_850hPa(1:nCells) = field_interp(1:nCells,7)
+            uzonal_925hPa(1:nCells) = field_interp(1:nCells,8)
+           ! call mpas_log_write('--- end interpolate zonal wind:')
         end if
        
-        if (NEED_UMERIDIONAL_ISOBARIC) then
+        if (NEED_UMERIDIONAL) then
            !... u meridional wind:
-
-            call VerticalInterpolation_Wind (nCells                                    , & !1. 
-                                             nVertLevels                               , & !2. 
-                                             nIsoLevelsT                               , & !3. 
-                                             pressure2    (1:nVertLevels,1:nCells)*100.0, & !4. 
-                                             t_iso_levels(1:nIsoLevelsT)               , & !5. 
-                                             umeridional (1:nVertLevels,1:nCells)      , & !6. 
-                                             field_interp(1:nIsoLevelsT,1:nCells)      )   !7. 
-
-
-            umeridional_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
+            do iCell = 1, nCells
+            do k = 1, nVertLevels
+               kk = nVertLevels+1-k
+               field_in(iCell,kk) = umeridional(k,iCell)
+            enddo
+            enddo
+            call interp_tofixed_pressure(nCells,nVertLevels,nIntP,press_in,field_in,press_interp,field_interp)
+            umeridional_50hPa(1:nCells) = field_interp(1:nCells,1)
+            umeridional_100hPa(1:nCells) = field_interp(1:nCells,2)
+            umeridional_200hPa(1:nCells) = field_interp(1:nCells,3)
+            umeridional_250hPa(1:nCells) = field_interp(1:nCells,4)
+            umeridional_500hPa(1:nCells) = field_interp(1:nCells,5)
+            umeridional_700hPa(1:nCells) = field_interp(1:nCells,6)
+            umeridional_850hPa(1:nCells) = field_interp(1:nCells,7)
+            umeridional_925hPa(1:nCells) = field_interp(1:nCells,8)
            ! call mpas_log_write('--- end interpolate meridional wind:')
         end if
        
-        if (NEED_SPECHUM_ISOBARIC) then
-           !... spechum:
-
-            call VerticalInterpolation_Humid(nCells                                    , & !1
-                                             nVertLevels                               , & !2
-                                             nIsoLevelsT                               , & !3
-                                             pressure2    (1:nVertLevels,1:nCells)*100.0, & !4
-                                             spechum     (1:nVertLevels,1:nCells)      , & !5
-                                             field_interp(1:nIsoLevelsT,1:nCells)      , & !6
-                                             t_iso_levels(1:nIsoLevelsT)               )   !7
-
-            spechum_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
- 
-           ! call mpas_log_write('--- end interpolate spechum:')
-        end if
-
-
-
         if(allocated(field_in)) deallocate(field_in)
         if(allocated(press_in)) deallocate(press_in)
        
-        if (NEED_W_ISOBARIC .or. NEED_HEIGHT_ISOBARIC .or. NEED_OMEGA_ISOBARIC &
-            .or. NEED_ZGEO_ISOBARIC) then
+        if (NEED_W .or. NEED_HEIGHT) then
            !interpolation to fixed pressure levels for fields located at cells centers and at vertical
            !velocity points:
             if(.not.allocated(press_in)) allocate(press_in(nCells,nVertLevelsP1))
+            do iCell = 1, nCells
+            do k = 1, nVertLevelsP1
+               kk = nVertLevelsP1+1-k
+               press_in(iCell,kk) = pressure2(k,iCell)
+            enddo
+            enddo
        
-
-            call VerticalInterpolation_Single ( nCells                                    , & !1
-                                                nVertLevels                               , & !2
-                                                nVertLevels                               , & !3
-                                                nIsoLevelsT                               , & !4
-                                                nIsoLevelsT                               , & !5
-                                                height      (1:nVertLevels,1:nCells)      , & !6
-                                                field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                                pressure2    (1:nVertLevels,1:nCells)*100.0, & !8
-                                                t_iso_levels(1:nIsoLevelsT)               )   !9
-
-            height_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
+            if(.not.allocated(field_in)) allocate(field_in(nCells,nVertLevelsP1))
+            !... height:
+            do iCell = 1, nCells
+            do k = 1, nVertLevelsP1
+               kk = nVertLevelsP1+1-k
+               field_in(iCell,kk) = height(k,iCell)
+            enddo
+            enddo
+            call interp_tofixed_pressure(nCells,nVertLevelsP1,nIntP,press_in,field_in,press_interp,field_interp)
+            height_50hPa(1:nCells) = field_interp(1:nCells,1)
+            height_100hPa(1:nCells) = field_interp(1:nCells,2)
+            height_200hPa(1:nCells) = field_interp(1:nCells,3)
+            height_250hPa(1:nCells) = field_interp(1:nCells,4)
+            height_500hPa(1:nCells) = field_interp(1:nCells,5)
+            height_700hPa(1:nCells) = field_interp(1:nCells,6)
+            height_850hPa(1:nCells) = field_interp(1:nCells,7)
+            height_925hPa(1:nCells) = field_interp(1:nCells,8)
            ! call mpas_log_write('--- end interpolate height:')
         
            !... vertical velocity
-
-            call VerticalInterpolation_Wind (nCells                                    , & !1. 
-                                             nVertLevels                               , & !2. 
-                                             nIsoLevelsT                               , & !3. 
-                                             pressure2    (1:nVertLevels,1:nCells)*100.0, & !4. 
-                                             t_iso_levels(1:nIsoLevelsT)               , & !5. 
-                                             vvel        (1:nVertLevels,1:nCells)      , & !6. 
-                                             field_interp(1:nIsoLevelsT,1:nCells)      )   !7.
-
-            w_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-           ! call mpas_log_write('--- end interpolate vertical velocity:')
-
-
-
-           !... zgeo:
-
-            if(allocated(field_in)) deallocate(field_in)
-            !CR:if(.not.allocated(field_in)) allocate(field_in(nCells,nVertLevelsP1))
-
-
-            call VerticalInterpolation_ZGEO(nVertLevels                               , & !1
-                                            nCells                                    , & !2
-                                            temperature (1:nVertLevels,1:nCells)      , & !3
-                                            pressure2    (1:nVertLevels,1:nCells)*100.0, & !4 
-                                            height      (1:1,1:nCells)                , & !5 
-                                            nIsoLevelsT                               , & !6
-                                            field_interp(1:nIsoLevelsT,1:nCells)      , & !7
-                                            t_iso_levels(1:nIsoLevelsT)               )   !8
-            
-            zgeo_isobaric(1:nIsoLevelsT,1:nCells) =  field_interp(1:nIsoLevelsT,1:nCells)
-
-
-           ! call mpas_log_write('--- end interpolate zgeo:')
-
-
-            !CR:? ...omega:
-
-            if(allocated(field_in)) deallocate(field_in)
-            !CR:if(.not.allocated(field_in)) allocate(field_in(nCells,nVertLevels))
-
-
-            call VerticalInterpolation_Wind (nCells                                    , & !1. 
-                                             nVertLevels                               , & !2. 
-                                             nIsoLevelsT                               , & !3. 
-                                             pressure2    (1:nVertLevels,1:nCells)*100.0, & !4. 
-                                             t_iso_levels(1:nIsoLevelsT)               , & !5. 
-                                             rho         (1:nVertLevels, 1:nCells)     , & !6. 
-                                             field_interp(1:nIsoLevelsT,1:nCells)      )   !7.
-
-
-            omega_isobaric(1:nIsoLevelsT,1:nCells) =  w_isobaric(1:nIsoLevelsT,1:nCells) * field_interp(1:nIsoLevelsT,1:nCells) *grav *(-1)
-
-           ! call mpas_log_write('--- end interpolat omega:')
-            
-            
-            
-
+            do iCell = 1, nCells
+            do k = 1, nVertLevelsP1
+               kk = nVertLevelsP1+1-k
+               field_in(iCell,kk) = vvel(k,iCell)
+            enddo
+            enddo
+            call interp_tofixed_pressure(nCells,nVertLevelsP1,nIntP,press_in,field_in,press_interp,field_interp)
+            w_50hPa(1:nCells) = field_interp(1:nCells,1)
+            w_100hPa(1:nCells) = field_interp(1:nCells,2)
+            w_200hPa(1:nCells) = field_interp(1:nCells,3)
+            w_250hPa(1:nCells) = field_interp(1:nCells,4)
+            w_500hPa(1:nCells) = field_interp(1:nCells,5)
+            w_700hPa(1:nCells) = field_interp(1:nCells,6)
+            w_850hPa(1:nCells) = field_interp(1:nCells,7)
+            w_925hPa(1:nCells) = field_interp(1:nCells,8)
+       
             if(allocated(field_in)) deallocate(field_in)
             if(allocated(press_in)) deallocate(press_in)
+           ! call mpas_log_write('--- end interpolate vertical velocity:')
         end if
 
         if(allocated(field_interp)) deallocate(field_interp)
         if(allocated(press_interp)) deallocate(press_interp)
        
-        if (NEED_VORTICITY_ISOBARIC) then
+        if (NEED_VORTICITY) then
            !interpolation to fixed pressure levels for fields located at cell vertices and at mass points:
             nIntP = 8
             if(.not.allocated(field_interp)) allocate(field_interp(nVertices,nIntP) )
@@ -1285,9 +864,9 @@ module mpas_isobaric_diagnostics
                press_in(iVert,kk) = pressure_v(k,iVert)
             enddo
             enddo
-
-            if(.not.allocated(field_in)) allocate(field_in(nVertices,nVertLevels)) 
-            !... relative vorticity:
+       
+            if(.not.allocated(field_in)) allocate(field_in(nVertices,nVertLevels))
+           !... relative vorticity:
             do iVert = 1, nVertices
             do k = 1, nVertLevels
                kk = nVertLevels+1-k
@@ -1295,17 +874,14 @@ module mpas_isobaric_diagnostics
             enddo
             enddo
             call interp_tofixed_pressure(nVertices,nVertLevels,nIntP,press_in,field_in,press_interp,field_interp)
-            !CR: passar vorticity de 8n para 22n padrao, mas antes eh necessario calcular vorticity 
-            !CR: no centro da celula, pois ela eh calculada nas arestas. Continua original MPAS ainda. (TO-DO)
-               
-            !vorticity_50hPa(1:nVertices) = field_interp(1:nVertices,1)
-            !vorticity_100hPa(1:nVertices) = field_interp(1:nVertices,2)
-            !vorticity_200hPa(1:nVertices) = field_interp(1:nVertices,3)
-            !vorticity_250hPa(1:nVertices) = field_interp(1:nVertices,4)
-            !vorticity_500hPa(1:nVertices) = field_interp(1:nVertices,5)
-            !vorticity_700hPa(1:nVertices) = field_interp(1:nVertices,6)
-            !vorticity_850hPa(1:nVertices) = field_interp(1:nVertices,7)
-            !vorticity_925hPa(1:nVertices) = field_interp(1:nVertices,8)
+            vorticity_50hPa(1:nVertices) = field_interp(1:nVertices,1)
+            vorticity_100hPa(1:nVertices) = field_interp(1:nVertices,2)
+            vorticity_200hPa(1:nVertices) = field_interp(1:nVertices,3)
+            vorticity_250hPa(1:nVertices) = field_interp(1:nVertices,4)
+            vorticity_500hPa(1:nVertices) = field_interp(1:nVertices,5)
+            vorticity_700hPa(1:nVertices) = field_interp(1:nVertices,6)
+            vorticity_850hPa(1:nVertices) = field_interp(1:nVertices,7)
+            vorticity_925hPa(1:nVertices) = field_interp(1:nVertices,8)
            ! call mpas_log_write('--- end interpolate relative vorticity:')
 
             if(allocated(field_interp)) deallocate(field_interp)
@@ -1335,12 +911,12 @@ module mpas_isobaric_diagnostics
      
             allocate(field_in(nCells, nVertLevels))
             allocate(press_in(nCells, nVertLevels))
-            !PK allocate(field_interp(nCells, nIsoLevelsT))
-            !PK allocate(press_interp(nCells, nIsoLevelsT))
+            allocate(field_interp(nCells, nIsoLevelsT))
+            allocate(press_interp(nCells, nIsoLevelsT))
      
-            !PK do k=1,nIsoLevelsT
-            !PK   press_interp(:,k) = t_iso_levels(k)
-            !PK end do
+            do k=1,nIsoLevelsT
+               press_interp(:,k) = t_iso_levels(k)
+            end do
      
             ! Additional temperature levels for vortex tracking
             do iCell=1,nCells
@@ -1358,18 +934,11 @@ module mpas_isobaric_diagnostics
             end do
      
             if (need_t_isobaric) then
-               !PK call interp_tofixed_pressure(nCells, nVertLevels, nIsoLevelsT, press_in, field_in, press_interp, field_interp)
-               CALL VerticalInterpolation_Thermal2(nCells                                       ,&
-                                                   nVertLevels                                  ,&
-                                                   nIsoLevelsT                                  ,&
-                                                   pressure2     (1:nVertLevels, 1:nCells)*100.0,&
-                                                   temperature   (1:nVertLevels, 1:nCells)      ,&
-                                                   t_isobaric    (1:nIsoLevelsT, 1:nCells)      ,&
-                                                   t_iso_levels  (1:nIsoLevelsT)                 )
-        
-               !PK do k=1,nIsoLevelsT
-               !PK    t_isobaric(k,1:nCells) = field_interp(k,1:nCells)
-               !PK end do
+                call interp_tofixed_pressure(nCells, nVertLevels, nIsoLevelsT, press_in, field_in, press_interp, field_interp)
+         
+                do k=1,nIsoLevelsT
+                   t_isobaric(k,1:nCells) = field_interp(1:nCells,k)
+                end do
             end if
      
      
@@ -1381,67 +950,55 @@ module mpas_isobaric_diagnostics
      
      
             deallocate(field_in)
-            !PK deallocate(field_interp)
+            deallocate(field_interp)
             deallocate(press_in)
-            !PK deallocate(press_interp)
+            deallocate(press_interp)
         end if
      
      
         !!!!!!!!!!! Additional height levels for vortex tracking !!!!!!!!!!!
         if (need_z_isobaric) then
-            !PK allocate(field_in(nCells, nVertLevelsP1))
-            !PK allocate(press_in(nCells, nVertLevelsP1))
-
-            !PK  allocate(field_interp(nCells, nIsoLevelsZ))
-            !PK allocate(press_interp(nCells, nIsoLevelsZ))
+            allocate(field_in(nCells, nVertLevelsP1))
+            allocate(press_in(nCells, nVertLevelsP1))
+            allocate(field_interp(nCells, nIsoLevelsZ))
+            allocate(press_interp(nCells, nIsoLevelsZ))
      
-            !do k=1,nIsoLevelsZ
-            !   press_interp(:,k) = z_iso_levels(k)
-            !end do
+            do k=1,nIsoLevelsZ
+               press_interp(:,k) = z_iso_levels(k)
+            end do
      
-            !PK do iCell=1,nCells
-            !PK do k=1,nVertLevelsP1
-            !PK    kk = nVertLevelsP1+1-k
-            !PK    field_in(iCell,kk) = height(k,iCell)
-            !PK end do
-            !PK end do
+            do iCell=1,nCells
+            do k=1,nVertLevelsP1
+               kk = nVertLevelsP1+1-k
+               field_in(iCell,kk) = height(k,iCell)
+            end do
+            end do
      
-            !PK do iCell=1,nCells
-            !PK do k=1,nVertLevelsP1
-            !PK    kk = nVertLevelsP1+1-k
-            !PK    press_in(iCell,kk) = pressure2(k,iCell) * 100.0
-            !PK end do
-            !PK end do
+            do iCell=1,nCells
+            do k=1,nVertLevelsP1
+               kk = nVertLevelsP1+1-k
+               press_in(iCell,kk) = pressure2(k,iCell) * 100.0
+            end do
+            end do
      
-            !PK call interp_tofixed_pressure(nCells, nVertLevelsP1, nIsoLevelsZ, press_in, field_in, press_interp, field_interp)
-              CALL VerticalInterpolation_Wind(nCells                                               ,&
-                                              nVertLevels                                          ,&
-                                              nIsoLevelsT                                          ,&
-                                              pressure2      (1:nVertLevels        ,1:nCells)*100.0,&
-                                              t_iso_levels   (1:nIsoLevelsT)                       ,&
-                                              height         (1:nVertLevels        ,1:nCells)      ,&
-                                              z_isobaric     (1:nIsoLevelsZ        ,1:nCells)       )
-      
-            !PK do k=1,nIsoLevelsZ
-            !PK   z_isobaric(k,1:nCells) = field_interp(1:nCells,k)
-            !PK end do
+            call interp_tofixed_pressure(nCells, nVertLevelsP1, nIsoLevelsZ, press_in, field_in, press_interp, field_interp)
      
-            !PKdeallocate(field_in)
-            !PKdeallocate(field_interp)
-            !PKdeallocate(press_in)
-            !PKdeallocate(press_interp)
+            do k=1,nIsoLevelsZ
+               z_isobaric(k,1:nCells) = field_interp(1:nCells,k)
+            end do
+     
+            deallocate(field_in)
+            deallocate(field_interp)
+            deallocate(press_in)
+            deallocate(press_interp)
         end if
     
         if(allocated(temperature) ) deallocate(temperature )
         if(allocated(pressure2)   ) deallocate(pressure2   )
         if(allocated(pressure)    ) deallocate(pressure    )
         if(allocated(dewpoint)    ) deallocate(dewpoint )
-        if(allocated(spechum)     ) deallocate(spechum  )
-
+       
     end subroutine interp_diagnostics
-
-
-!***********************************************************************
 
 
    !==================================================================================================

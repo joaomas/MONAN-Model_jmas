@@ -275,7 +275,6 @@
     graupelncv_p,     &!
     sr_p
 
-!... added for the thompson and wsm6 cloud microphysics:
  integer:: & 
     has_reqc,         &!
     has_reqi,         &!
@@ -286,8 +285,7 @@
     evapprod_p,       &!
     recloud_p,        &!
     reice_p,          &!
-    resnow_p,         &!
-    refl10cm_p         !
+    resnow_p           !
 
 !... for Thompson cloud microphysics parameterization, including aerosol-aware option:
  real(kind=RKIND),dimension(:,:),allocatable:: &
@@ -371,50 +369,6 @@
  real(kind=RKIND),dimension(:,:,:),allocatable:: &
     rqvften_p,        &!
     rthften_p          !
-
-!... gf monan specific arrays:
- real(kind=RKIND),dimension(:,:,:),allocatable:: &
-    cnvcf_p,              &
-    buoyx_p,              &
-    rcnvcfcuten_p,        &!
-    rbuoyxcuten_p,        &!
-    rupmfxcu_p,           &!
-    rdnmfxcu_p,           &!
-    v3d1_p
- 
- real(kind=RKIND),dimension(:,:),allocatable:: &
-    cape_p,         &!
-    cin_p,          &!
-    v2d1_p,         &
-    v2d2_p,         &
-    rmfxdpcu_p,     &!
-    rmfxdncu_p,     &!
-    rmfxmdcu_p,     &
-    rmfxshcu_p,     &
-    rtopdpcu_p,     &
-    rtopmdcu_p,     &
-    rtopshcu_p,     &
-    rbotdpcu_p,     &
-    sgsgustcu_p,    &
-    sigma_deep_p
- 
- real(kind=RKIND),dimension(:,:),allocatable:: &
-    wlpool_p,     &!
-    vcpool_p,     &!
-    lightn_dens_p,&
-    ctt_p        ,&
-    dp_dens_p    ,&
-    sh_dens_p    ,&
-    cg_dens_p    ,&
-    dp_ierr_p    ,&
-    sh_ierr_p    ,&
-    cg_ierr_p
-
- real(kind=RKIND),dimension(:,:,:),allocatable:: &
-    sub3d_rthcuten_p,        &!
-    sub3d_rqvcuten_p,        &!
-    sub3d_rucuten_p,         &!
-    sub3d_rvcuten_p           !
 
 !=================================================================================================================
 !... variables and arrays related to parameterization of pbl:
@@ -636,11 +590,6 @@
     wspd_p,           &!wind speed                                                                           [m/s]
     znt_p,            &!time-varying roughness length                                                          [m]
     zol_p              !
-!---srf 
-real(kind=RKIND),dimension(:,:),allocatable:: &
-    hfx_spr_p,            &!upward heat flux at the due sea sprays                                          [W/m2]
-    lh_spr_p               !latent heat flux at the due sea sprays                                          [W/m2]
-  
 
 !... arrays only in monin_obukohv (module_sf_sfclay.F):
  real(kind=RKIND),dimension(:,:),allocatable:: &
@@ -863,8 +812,7 @@ real(kind=RKIND),dimension(:,:),allocatable:: &
     qvrad_p,          &!water vapor mixing ratio local to cloudiness and radiation                         [kg/kg]
     qcrad_p,          &!cloud liquid water mixing ratio local to cloudiness and radiation                  [kg/kg]
     qirad_p,          &!cloud ice mixing ratio local to cloudiness and radiation                           [kg/kg]
-    qsrad_p,          &!snow mixing ratio local to cloudiness and radiation                                [kg/kg]
-    zgrid_p
+    qsrad_p            !snow mixing ratio local to cloudiness and radiation                                [kg/kg]
 
 !=================================================================================================================
 !.. variables and arrays related to land-surface parameterization:

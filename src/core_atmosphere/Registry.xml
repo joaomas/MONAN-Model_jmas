@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<registry model="mpas" core="atmosphere" core_abbrev="atm" version="8.3.1">
+<registry model="mpas" core="atmosphere" core_abbrev="atm" version="8.4.0">
 
 <!-- **************************************************************************************** -->
 <!-- ************************************** Dimensions ************************************** -->
@@ -156,15 +156,45 @@
                      description="Formulation of horizontal mixing"
                      possible_values="`2d_fixed' or `2d_smagorinsky'"/>
 
+                <nml_option name="config_les_model" type="character" default_value="none"
+                     units="-"
+                     description="LES dissipation model"
+                     possible_values="`none', `3d_smagorinsky', `prognostic_1.5_order'"/>
+
+                <nml_option name="config_les_surface" type="character" default_value="none"
+                     units="-"
+                     description="LES surface flux option"
+                     possible_values="`specified', `varying'"/>
+
+                <nml_option name="config_surface_heat_flux" type="real" default_value="0.0"
+                     units="K m s-1"
+                     description="specified surface heat flux w'theta'"
+                     possible_values="real number"/>
+
+                <nml_option name="config_surface_moisture_flux" type="real" default_value="0.0"
+                     units="kg m s-1"
+                     description="specified surface moisture flux w'q'"
+                     possible_values="real number"/>
+
+                <nml_option name="config_surface_drag_coefficient" type="real" default_value="0.0"
+                     units="-"
+                     description="Cd 10m drag coefficient"
+                     possible_values="real number"/>
+
                 <nml_option name="config_len_disp" type="real" default_value="0.0" in_defaults="false"
                      units="m"
                      description="Horizontal length scale, used by the Smagorinsky formulation of horizontal diffusion and by 3-d divergence damping"
                      possible_values="Positive real values. A zero value implies that the length scale is prescribed by the nominalMinDc value in the input file."/>
 
                 <nml_option name="config_visc4_2dsmag" type="real" default_value="0.05"
-                     units="-"
-                     description="Scaling coefficient of $\delta x^3$ to obtain $\nabla^4$ diffusion coefficient"
+                     units="m s^{-1}"
+                     description="Coefficient multiplied by $\delta x^3$ to obtain $\nabla^4$ physical hyperviscosity"
                      possible_values="Non-negative real values"/>
+
+                <nml_option name="config_mix_scalars" type="logical" default_value="false"
+                     units="-"
+                     description="Whether to enable horizontal and vertical mixing for scalars"
+                     possible_values=".true. or .false."/>
 
                 <nml_option name="config_del4u_div_factor" type="real" default_value="10.0" in_defaults="false"
                      units="-"
@@ -236,7 +266,7 @@
                      description="Mix full $\theta$ and $u$ fields, or mix perturbation from intitial state"
                      possible_values=".true. or .false."/>
 
-                <nml_option name="config_epssm" type="real" default_value="0.1"
+                <nml_option name="config_epssm" type="real" default_value="0.0" in_defaults="false"
                      units="-"
                      description="Off-centering parameter for the vertically implicit acoustic integration"
                      possible_values="Positive real values"/>
@@ -274,12 +304,12 @@
                      possible_values="Positive real values"/>
 
                 <nml_option name="config_xnutr" type="real" default_value="0.2"
-                     units="-"
+                     units="s^{-1}"
                      description="Maximum w-damping coefficient at model top"
                      possible_values="0 $\leq$ config_xnutr $\leq$ 1"/>
 
                 <nml_option name="config_mpas_cam_coef" type="real" default_value="0.0" in_defaults="false"
-                     units="-"
+                     units="m s^{-1}"
                      description="Coefficient for scaling the 2nd-order horizontal mixing in the mpas_cam absorbing layer"
                      possible_values="0 $\leq$ config_mpas_cam_coef $\leq$ 1, standard value is 0.2"/>
 
@@ -302,6 +332,27 @@
                      units="-"
                      description="Number of layers in which to apply Rayleigh damping on horizontal velocity at top of model; damping linearly ramps to zero by layer number from the top"
                      possible_values="Positive integer values"/>
+
+                <nml_option name="config_epssm_minimum" type="real" default_value="0.1"
+                     units="-"
+                     description="Value of epssm below transition zone"
+                     possible_values="Positive real values between 0 and 1"/>
+
+                <nml_option name="config_epssm_maximum" type="real" default_value="0.5"
+                     units="-"
+                     description="Value of epssm above transition zone"
+                     possible_values="Positive real values between 0 and 1"/>
+
+                <nml_option name="config_epssm_transition_bottom_z" type="real" default_value="30000."
+                     units="m"
+                     description="Height MSL of bottom of transition zone for epssm"
+                     possible_values="Positive real values"/>
+
+                <nml_option name="config_epssm_transition_top_z" type="real" default_value="50000."
+                     units="m"
+                     description="Height MSL of top of transition zone for epssm"
+                     possible_values="Positive real values"/>
+
         </nml_record>
 
         <nml_record name="limited_area" in_defaults="true">
@@ -402,7 +453,21 @@
                      units="-"
                      description="Method to use for exchanging halos"
                      possible_values="`mpas_dmpar', `mpas_halo'"/>
+
+               <nml_option name="config_gpu_aware_mpi" type="logical" default_value="false"
+                     units="-"
+                     description="Whether to use GPU-aware MPI for halo exchanges. GPU-aware MPI is only implemented for config_halo_exch_method='mpas_halo'"
+                     possible_values=".true. or .false."/>
         </nml_record>
+
+#ifdef MPAS_USE_MUSICA
+        <nml_record name="musica" in_defaults="true">
+                <nml_option name="config_micm_file" type="character" default_value=""
+                     units="-"
+                     description="MICM configuration file name"
+                     possible_values="Any valid filename"/>
+        </nml_record>
+#endif
 
 <!-- **************************************************************************************** -->
 <!-- **************************************  Packages  ************************************** -->
@@ -414,7 +479,6 @@
                 <package name="mp_thompson_aers_in" description="parameterization of aerosol-aware Thompson cloud microphysics."/>
                 <package name="mp_wsm6_in" description="parameterization of WSM6 cloud microphysics."/>
                 <package name="cu_grell_freitas_in" description="parameterization of Grell-Freitas convection."/>
-                <package name="cu_gf_monan_in" description="parameterization of Grell-Freitas convection used in MONAN."/>
                 <package name="cu_kain_fritsch_in" description="parameterization of Kain-Fritsch convection."/>
                 <package name="cu_ntiedtke_in" description="parameterization of Tiedtke convection."/>
                 <package name="bl_ysu_in" description="parameterization of YSU Planetary Boundary Layer."/>
@@ -428,12 +492,9 @@
                 <package name="ugwp_orog_stream" description="Input stream (and variables) for UGWP orography"/>
                 <package name="ugwp_ngw_stream"  description="Input stream (and variables) for UGWP NGW lookup table"/>
                 <package name="ugwp_diags_stream" description="Output stream (and variables) for UGWP output diagnostics"/>
-                <!-- GF-MONAN packages for sub-options -->
-                <package name="gf_monan_gustf" description="GF-MONAN gust front effects on surface fluxes"/>
-                <package name="gf_monan_cporg" description="GF-MONAN cold pool edge effects on convection organization"/>
-                <package name="gf_monan_pcvol" description="GF-MONAN passive cloud volume"/>
-                <package name="gf_monan_sub3d" description="GF-MONAN 3d lateral spreading of the env subsidence"/>
-
+                <package name="les"
+                         description="Variables and options associated with LES models"
+                         active_when="trim(config_les_model) /= 'none'"/>
         </packages>
 
 
@@ -509,8 +570,6 @@
 			<var name="zb3"/>
 			<var name="dss"/>
 			<var name="deriv_two"/>
-			<var name="defc_a"/>
-			<var name="defc_b"/>
 			<var name="coeffs_reconstruct"/>
 #ifdef MPAS_CAM_DYCORE
 			<var name="cell_gradient_coef_x"/>
@@ -573,18 +632,6 @@
 			<var name="surface_pressure"/>
 
 #ifdef DO_PHYSICS
-			<var name="isltyp"/>
-			<var name="ivgtyp"/>
-			<var name="mminlu"/>
-			<var name="isice_lu"/>
-			<var name="iswater_lu"/>
-			<var name="landmask"/>
-			<var name="ter"/>
-			<var name="shdmin"/>
-			<var name="shdmax"/>
-			<var name="snoalb"/>
-			<var name="albedo12m"/>
-			<var name="greenfrac"/>
 			<var name="sfc_albbck"/>
 			<var name="skintemp"/>
 			<var name="snow"/>
@@ -670,7 +717,6 @@
 			<var name="mu_c"/>
                         <var name="tend_sfc_pressure"/>
 			<var name="rt_diabatic_tend"/>
-			<var name="nsteps_accum_rad"/>
 			<var name="nsteps_accum"/>
 			<var name="ndays_accum"/>
 			<var name="tlag"/>
@@ -876,28 +922,6 @@
 			<var name="rnwfablten"/>
 			<var name="rthratensw"/>
 			<var name="rthratenlw"/>
-               <var name="rcnvcfcuten" packages="cu_gf_monan_in"/>
-               <var name="rbuoyxcuten" packages="cu_gf_monan_in"/>
-               <var name="umcl" packages="cu_gf_monan_in"/>
-               <var name="vmcl" packages="cu_gf_monan_in"/>
-               <var name="wlpool" packages="cu_gf_monan_in"/>
-               <var name="vcpool" packages="cu_gf_monan_in"/>
-               <var name="sub3d_rthcuten" packages="cu_gf_monan_in"/>
-               <var name="sub3d_rqvcuten" packages="cu_gf_monan_in"/>
-               <var name="sub3d_rucuten" packages="cu_gf_monan_in"/>
-               <var name="sub3d_rvcuten" packages="cu_gf_monan_in"/>
-               <var name="sigma_deep" packages="cu_gf_monan_in"/>
-			<var name="isltyp"/>
-			<var name="ivgtyp"/>
-			<var name="mminlu"/>
-			<var name="isice_lu"/>
-			<var name="iswater_lu"/>
-			<var name="landmask"/>
-			<var name="shdmin"/>
-			<var name="shdmax"/>
-			<var name="snoalb"/>
-			<var name="albedo12m"/>
-			<var name="greenfrac"/>
 			<var name="sfc_albbck"/>
 			<var name="skintemp"/>
 			<var name="snow"/>
@@ -987,28 +1011,7 @@
 			<var name="ke"/>
 			<var name="uReconstructZonal"/>
 			<var name="uReconstructMeridional"/>
-
-                        <!-- Begin Ertel PV diagnostics defined in diagnostics/Registry_pv.xml -->
-			<var name="ertel_pv"/>
-			<var name="u_pv"/>
-			<var name="v_pv"/>
-			<var name="theta_pv"/>
-			<var name="vort_pv"/>
-			<var name="iLev_DT"/>
 #ifdef DO_PHYSICS
-			<var name="depv_dt_lw"/>
-			<var name="depv_dt_sw"/>
-			<var name="depv_dt_bl"/>
-			<var name="depv_dt_cu"/>
-			<var name="depv_dt_mix"/>
-			<var name="dtheta_dt_mp"/>
-			<var name="depv_dt_mp"/>
-			<var name="depv_dt_diab"/>
-			<var name="depv_dt_fric"/>
-			<var name="depv_dt_diab_pv"/>
-			<var name="depv_dt_fric_pv"/>
-                        <!-- End Ertel PV diagnostics defined in diagnostics/Registry_pv.xml -->
-
 			<var name="i_rainnc"/>
 			<var name="rainnc"/>
 			<var name="precipw"/>
@@ -1067,14 +1070,77 @@
 			<var name="xtime"/>
 			<var name="Time"/>
 
-                        <var name="t_isobaric"/>
-                        <var name="temperature"/>
-                        <var name="pressure"/>
-                        <var name="t_iso_levels"/>
-                        <var name="z_isobaric"/>
-                        <var name="z_iso_levels"/>
-                        <var name="meanT_500_300"/>
-                        <var name="surface_pressure"/>
+                        <!-- Begin isobaric diagnostics defined in diagnostics/Registry_isobaric.xml -->
+			<var name="mslp"/>
+			<var name="relhum_50hPa"/>
+			<var name="relhum_100hPa"/>
+			<var name="relhum_200hPa"/>
+			<var name="relhum_250hPa"/>
+			<var name="relhum_500hPa"/>
+			<var name="relhum_700hPa"/>
+			<var name="relhum_850hPa"/>
+			<var name="relhum_925hPa"/>
+			<var name="dewpoint_50hPa"/>
+			<var name="dewpoint_100hPa"/>
+			<var name="dewpoint_200hPa"/>
+			<var name="dewpoint_250hPa"/>
+			<var name="dewpoint_500hPa"/>
+			<var name="dewpoint_700hPa"/>
+			<var name="dewpoint_850hPa"/>
+			<var name="dewpoint_925hPa"/>
+			<var name="temperature_50hPa"/>
+			<var name="temperature_100hPa"/>
+			<var name="temperature_200hPa"/>
+			<var name="temperature_250hPa"/>
+			<var name="temperature_500hPa"/>
+			<var name="temperature_700hPa"/>
+			<var name="temperature_850hPa"/>
+			<var name="temperature_925hPa"/>
+			<var name="height_50hPa"/>
+			<var name="height_100hPa"/>
+			<var name="height_200hPa"/>
+			<var name="height_250hPa"/>
+			<var name="height_500hPa"/>
+			<var name="height_700hPa"/>
+			<var name="height_850hPa"/>
+			<var name="height_925hPa"/>
+			<var name="uzonal_50hPa"/>
+			<var name="uzonal_100hPa"/>
+			<var name="uzonal_200hPa"/>
+			<var name="uzonal_250hPa"/>
+			<var name="uzonal_500hPa"/>
+			<var name="uzonal_700hPa"/>
+			<var name="uzonal_850hPa"/>
+			<var name="uzonal_925hPa"/>
+			<var name="umeridional_50hPa"/>
+			<var name="umeridional_100hPa"/>
+			<var name="umeridional_200hPa"/>
+			<var name="umeridional_250hPa"/>
+			<var name="umeridional_500hPa"/>
+			<var name="umeridional_700hPa"/>
+			<var name="umeridional_850hPa"/>
+			<var name="umeridional_925hPa"/>
+			<var name="w_50hPa"/>
+			<var name="w_100hPa"/>
+			<var name="w_200hPa"/>
+			<var name="w_250hPa"/>
+			<var name="w_500hPa"/>
+			<var name="w_700hPa"/>
+			<var name="w_850hPa"/>
+			<var name="w_925hPa"/>
+			<var name="vorticity_50hPa"/>
+			<var name="vorticity_100hPa"/>
+			<var name="vorticity_200hPa"/>
+			<var name="vorticity_250hPa"/>
+			<var name="vorticity_500hPa"/>
+			<var name="vorticity_700hPa"/>
+			<var name="vorticity_850hPa"/>
+			<var name="vorticity_925hPa"/>
+			<var name="t_isobaric"/>
+			<var name="t_iso_levels"/>
+			<var name="z_isobaric"/>
+			<var name="z_iso_levels"/>
+			<var name="meanT_500_300"/>
                         <!-- End isobaric diagnostics defined in diagnostics/Registry_isobaric.xml -->
 
 #ifdef DO_PHYSICS
@@ -1114,7 +1180,6 @@
                         <var name="umeridional_6km"/>
                         <var name="temperature_surface"/>
                         <var name="dewpoint_surface"/>
-         
 			<var name="updraft_helicity_max"/>
 			<var name="w_velocity_max"/>
 			<var name="wind_speed_level1_max"/>
@@ -1511,6 +1576,18 @@
                 <var name="rdzw" type="real" dimensions="nVertLevels" units="unitless"
                      description="Reciprocal dzw"/>
 
+                <var name="etp" type="real" dimensions="nVertLevels" units="unitless"
+                     description="etp = (1+epssm(z))/2 at theta point"/>
+
+                <var name="etm" type="real" dimensions="nVertLevels" units="unitless"
+                     description="etm = (1-epssm(z))/2 at theta point"/>
+
+                <var name="ewp" type="real" dimensions="nVertLevelsP1" units="unitless"
+                     description="ewp = (1+epssm(z))/2 at w point"/>
+
+                <var name="ewm" type="real" dimensions="nVertLevelsP1" units="unitless"
+                     description="ewm = (1-epssm(z))/2 at w point"/>
+
                 <var name="dzu" type="real" dimensions="nVertLevels" units="unitless"
                      description="d(zeta) at w levels"/>
 
@@ -1574,13 +1651,6 @@
                 <var name="nAdvCellsForEdge" type="integer" dimensions="nEdges" units="-"
                      description="Number of cells used to reconstruct a cell-based field at an edge"/>
 
-                <!-- Space needed for deformation calculation weights -->
-                <var name="defc_a" type="real" dimensions="maxEdges nCells" units="unitless"
-                     description="Coefficients for computing the off-diagonal components of the horizontal deformation"/>
-
-                <var name="defc_b" type="real" dimensions="maxEdges nCells" units="unitless"
-                     description="Coefficients for computing the diagonal components of the horizontal deformation"/>
-
 #ifdef MPAS_CAM_DYCORE
                 <var name="cell_gradient_coef_x" type="real" dimensions="maxEdges nCells" units="m^-1"
                      description="Coefficients for computing the x (zonal) derivative of a cell-centered variable"/>
@@ -1588,6 +1658,21 @@
                 <var name="cell_gradient_coef_y" type="real" dimensions="maxEdges nCells" units="m^-1"
                      description="Coefficients for computing the y (meridional) derivative of a cell-centered variable"/>
 #endif
+                <!-- Space needed for deformation calculation weights -->
+                <var name="deformation_coef_c2" type="real" dimensions="maxEdges nCells" units="unitless"
+                     description="Coefficients for computing the cos-squared terms of the 3d deformation"/>
+
+                <var name="deformation_coef_s2" type="real" dimensions="maxEdges nCells" units="unitless"
+                     description="Coefficients for computing the sine-squared terms of the 3d deformation"/>
+
+                <var name="deformation_coef_cs" type="real" dimensions="maxEdges nCells" units="unitless"
+                     description="Coefficients for computing the cos-sine terms of the 3d deformation"/>
+
+                <var name="deformation_coef_c" type="real" dimensions="maxEdges nCells" units="unitless"
+                     description="Coefficients for computing the cos-only terms of the 3d deformation"/>
+
+                <var name="deformation_coef_s" type="real" dimensions="maxEdges nCells" units="unitless"
+                     description="Coefficients for computing the sine-only terms of the 3d deformation"/>
 
                 <!-- Arrays required for reconstruction of velocity field -->
                 <var name="coeffs_reconstruct" type="real" dimensions="R3 maxEdges nCells" units="unitless"
@@ -1701,13 +1786,9 @@
                              description="Water-friendly aerosol number concentration"
                              packages="mp_thompson_aers_in"/>
 
-                        <var name="cnvcf" array_group="convection" units="none"
-                             description="Convective cloud fraction"
-                             packages="gf_monan_pcvol"/>
-
-                        <var name="buoyx" array_group="convection" units="J kg^{-1}"
-                             description="Buoyancy excess from the cold pool scheme"
-                             packages="gf_monan_cporg"/>
+                        <var name="tke" array_group="turbulence" units="m^2 s^{-2}"
+                             description="Turbulent kinetic energy for the prognostic tke LES scheme"
+                             packages="les"/>
                 </var_array>
 #endif
 
@@ -1956,12 +2037,20 @@
                 <var name="rho_p_save" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-3}"
                      description="predicted value rho_p, saved before acoustic steps"/>
 
-                <var name="kdiff" type="real" dimensions="nVertLevels nCells Time" units="m^2 s^{-1}"
-                     description="Smagorinsky horizontal eddy viscosity"/>
+                <var name="eddy_visc_vert" type="real" dimensions="nVertLevels nCells Time" units="m^2 s^{-1}"
+                     description="vertical eddy viscosity for les models"/>
 
-                <var name="rumcl" type="real" dimensions="nVertLevels nEdges Time" units="kg m^{-2} s^{-1}"
-                     description="horizontal mean cloud layer momentum at cell edge (rho*u/zz)"
-                     packages="cu_gf_monan_in"/>
+                <var name="eddy_visc_horz" type="real" dimensions="nVertLevels nCells Time" units="m^2 s^{-1}"
+                     description="horizontal eddy viscosity for les models"/>
+
+                <var name="prandtl_3d_inv" type="real" dimensions="nVertLevels nCells Time" units="unitless"
+                     description="Inverse prandtl number used for vertical mixing in prognostic LES formulation"/>
+
+                <var name="bn2" type="real" dimensions="nVertLevels nCells Time" units="s^{-2}"
+                     description="Square of Brunt-Vaisala frequency"/>
+
+                <var name="tend_rtheta_adv" type="real" dimensions="nVertLevels nCells Time" units="kg K m^{-3} s^{-1}"
+                     description="flux divergence for rho*theta_m/zz, used in the Tiedtke convective parameterization"/>
 
                 <var name="surface_pressure" type="real" dimensions="nCells Time" units="Pa"
                      description="Diagnosed surface pressure"/>
@@ -2064,13 +2153,9 @@
                              description="Tendency of water-friendly aerosol number concentration multiplied by dry air density divided by d(zeta)/dz"
                              packages="mp_thompson_aers_in"/>
 
-                       <var name="tend_cnvcf" name_in_code="cnvcf" array_group="convection" units="s^{-1}" 
-                             description="Tendency of convective cloud fraction multiplied by dry air density divided by d(zeta)/dz"
-                             packages="gf_monan_pcvol"/>
-                           
-                       <var name="tend_buoyx" name_in_code="buoyx" array_group="convection" units="J kg^{-1} s^{-1}" 
-                             description="Tendency of buoyancy excess from the cold pool scheme multiplied by dry air density divided by d(zeta)/dz"
-                             packages="gf_monan_cporg"/>
+                        <var name="tend_tke" name_in_code="tke" array_group="turbulence" units="kg m^{-3} m^2 s^{-2} s^{-1}" 
+                             description="Tendency of tke multiplied by dry air density divided by d(zeta)/dz"
+                             packages="les"/>
                 </var_array>
 #endif
         </var_struct>
@@ -2149,6 +2234,11 @@
                         <var name="lbc_nwfa" name_in_code="nwfa" array_group="number" packages="mp_thompson_aers_in"
                              units="m^{-3} s^{-1}"
                              description="Lateral boundary tendency of water-friendly aerosol number concentration"/>
+
+                        <var name="lbc_tke" name_in_code="tke" array_group="turbulence"
+                             units="m^2 s^{-3}"
+                             description="Lateral boundary tendency of TKE"
+                             packages="les"/>
                 </var_array>
         </var_struct>
 
@@ -2262,6 +2352,11 @@
                      description="number of microphysics time-steps per physics time-steps"
                      possible_values="Positive integers"/>
 
+                <nml_option name="config_microphysics_top" type="real" default_value="45000." in_defaults="false"
+                     units="m"
+                     description="height above which to exclude microphysics tendencies"
+                     possible_values="Positive reals"/>
+
                 <nml_option name="config_radtlw_interval" type="character" default_value="00:30:00"
                      units="-"
                      description="time interval between calls to parameterization of long-wave radiation"
@@ -2310,7 +2405,7 @@
                 <nml_option name="config_convection_scheme" type="character" default_value="suite" in_defaults="false"
                      units="-"
                      description="configuration for convection schemes"
-                     possible_values="`suite',`cu_kain_fritsch',`cu_tiedtke',`cu_ntiedtke',`cu_grell_freitas',`cu_gf_monan`,`off'"/>
+                     possible_values="`suite',`cu_kain_fritsch',`cu_tiedtke',`cu_ntiedtke',`cu_grell_freitas',`off'"/>
 
                 <nml_option name="config_lsm_scheme" type="character" default_value="suite" in_defaults="false"
                      units="-"
@@ -2469,11 +2564,6 @@
                      description="threshold above which accumulated radiation diagnostics are reset"
                      possible_values="Positive real values"/>
 
-                <nml_option name="config_bucket_sfcpbldt" type="real" default_value="1.0e9" in_defaults="false"
-                     units="-"
-                     description="threshold above which accumulated sfc layer pbl diagnostics are reset"
-                     possible_values="Positive real values"/>
-
                 <nml_option name="config_bucket_rainc" type="real" default_value="100.0" in_defaults="false"
                      units="-"
                      description="threshold above which the accumulated convective precipitation is reset"
@@ -2510,38 +2600,12 @@
                      possible_values="Non-negative real values"/>
         </nml_record>
 
-        <nml_record name="gf_monan" in_defaults="true">
-                <nml_option name="config_gf_pcvol" type="integer" default_value="0" in_defaults="false"
-                     units="-"
-                     description="Option for activating the passive cloud volume approach in Grell-Freitas MONAN convection scheme"
-                     possible_values="0,1,2,3,12"/>
-
-                <nml_option name="config_gf_cporg" type="integer" default_value="0" in_defaults="false"
-                     units="-"
-                     description="Option for activating the cold pool parameterization in Grell-Freitas MONAN convection scheme"
-                     possible_values="0,1"/>
-
-                <nml_option name="config_gf_gustf" type="integer" default_value="0" in_defaults="false"
-                     units="-"
-                     description="Option for coupling the Grell-Freitas MONAN cold pool gust front speed with the surface layer scheme, it needs config_gf_cporg greater than zero"
-                     possible_values="0,1,2"/>
-                
-                <nml_option name="config_gf_sub3d" type="integer" default_value="0" in_defaults="false"
-                     units="-"
-                     description="Option for the lateral subsidence spread for the Grell-Freitas scheme"
-                     possible_values="0,1"/>
-
-        </nml_record>
-
-
         <var_struct name="diag_physics" time_levs="1">
 
 
                 <!-- ================================================================================================= -->
                 <!-- ... ARRAYS AND VARIABLES FOR UPDATING THE DEEP SOIL TEMPERATURE:                                  -->
                 <!-- ================================================================================================= -->
-                <var name="nsteps_accum_rad" type="real" dimensions="nCells Time" units="unitless"
-                     description="number of accumulated time-steps radiation"/>
 
                 <var name="nsteps_accum" type="real" dimensions="nCells Time" units="unitless"
                      description="number of accumulated time-steps in a day"/>
@@ -2676,19 +2740,19 @@
 
                 <var name="i_rainc" type="integer" dimensions="nCells Time" units="unitless"
                      description="incidence of accumulated convective precipitation greater than config_bucket_rainc"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
                 <var name="cuprec" type="real" dimensions="nCells Time" units="mm s^{-1}"
                      description="convective precipitation rate"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
                 <var name="rainc" type="real" dimensions="nCells Time" units="mm"
                      description="accumulated convective precipitation"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
                 <var name="raincv" type="real" dimensions="nCells Time" units="mm"
                      description="time-step convective precipitation"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
 
                 <!-- ... KAIN_FRITSCH ONLY: -->
@@ -2728,136 +2792,11 @@
 
                 <var name="qc_cu" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1}"
                      description="in-cloud cloud water mixing ratio in Grell-Freitas cloud model"
-                     packages="cu_grell_freitas_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in"/>
 
                 <var name="qi_cu" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1}"
                      description="in-cloud cloud ice mixing ratio in Grell-Freitas cloud model"
-                     packages="cu_grell_freitas_in;cu_gf_monan_in"/>
-
-                <!-- ... GF MONAN ONLY: -->
-                <var name="dp_ierr" type="real" dimensions="nCells Time" units=""
-                      description="reason deep convection was not activated"
-                      packages="cu_gf_monan_in"/>
-                
-                <var name="cg_ierr" type="real" dimensions="nCells Time" units=""
-                      description="reason congestus convection was not activated"
-                      packages="cu_gf_monan_in"/>
-
-                <var name="sh_ierr" type="real" dimensions="nCells Time" units=""
-                      description="reason shallow convection was not activated"
-                      packages="cu_gf_monan_in"/>
-
-                <var name="dp_dens" type="real" dimensions="nCells Time" units=""
-                      description="number of times deep convection was activated"
-                      packages="cu_gf_monan_in"/>
-
-                <var name="acc_dp_dens" type="real" dimensions="nCells Time" units=""
-                      description="accumulated number of times deep convection was activated"
-                      packages="cu_gf_monan_in"/>
-
-                <var name="sh_dens" type="real" dimensions="nCells Time" units=""
-                      description="number of times shallow convection was activated"
-                      packages="cu_gf_monan_in"/>
-
-                <var name="acc_sh_dens" type="real" dimensions="nCells Time" units=""
-                      description="accumulated number of times shallow convection was activated"
-                      packages="cu_gf_monan_in"/>
-                
-                <var name="cg_dens" type="real" dimensions="nCells Time" units=""
-                      description="number of times congestus convection was activated"
-                      packages="cu_gf_monan_in"/>
-
-                <var name="acc_cg_dens" type="real" dimensions="nCells Time" units=""
-                      description="accumulated number of times congestus convection was activated"
-                      packages="cu_gf_monan_in"/>
-
-                <var name="lightn_dens" type="real" dimensions="nCells Time" units="km^{-2} s^{-1}"
-                     description="convective lightning density rate"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="acc_lightn_dens" type="real" dimensions="nCells Time" units="km^{-2}"
-                     description="accumulated convective lightning density"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="wlpool" type="real" dimensions="nCells Time" units="m s^{-1}"
-                     description="Max vertical velocity at the leading of the cold pool"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="vcpool" type="real" dimensions="nCells Time" units="m s^{-1}"
-                     description="Cold pool gust front horizontal speed "
-                     packages="cu_gf_monan_in"/>
-
-                <var name="umcl" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="horizontal mean cloud layer zonal momentum (rho*u/zz)"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="vmcl" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="horizontal mean cloud layer meridional momentum (rho*u/zz)"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="u_gustfront" type="real" dimensions="nCells Time" units="m s^{-1}"
-                     description="zonal gust front speed at surface level"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="v_gustfront" type="real" dimensions="nCells Time" units="m s^{-1}"
-                     description="meridional gust front speed at surface level"
-                     packages="cu_gf_monan_in"/>
-               
-                <var name="rupmfxcu" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="vertical updraft mass flux from cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rdnmfxcu" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="vertical downdraft mass flux from cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="v3d1" type="real" dimensions="nVertLevels nCells Time" units="undef"
-                     description="dummy 3d variable 1 for output only"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="sigma_deep" type="real" dimensions="nCells Time" units="-"
-                     description="scale-aware parameter for deep convection"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rmfxdpcu" type="real" dimensions="nCells Time" units="kg m^{-2} s^{-1}"
-                     description="updraft mass flux at cloud base from deep cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rmfxdncu" type="real" dimensions="nCells Time" units="kg m^{-2} s^{-1}"
-                     description="downdraft mass flux at cloud base from deep cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rmfxmdcu" type="real" dimensions="nCells Time" units="kg m^{-2} s^{-1}"
-                     description="updraft mass flux at cloud base from congestus cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rmfxshcu" type="real" dimensions="nCells Time" units="kg m^{-2} s^{-1}"
-                     description="updraft mass flux at cloud base from shallow cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rtopdpcu" type="real" dimensions="nCells Time" units="m"
-                     description="cloud top height above msl from deep cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rbotdpcu" type="real" dimensions="nCells Time" units="m"
-                     description="cloud base height above msl from deep cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rtopmdcu" type="real" dimensions="nCells Time" units="m"
-                     description="cloud top height above msl from congestus cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rtopshcu" type="real" dimensions="nCells Time" units="m"
-                     description="cloud top height above msl from shallow cumulus parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="v2d1" type="real" dimensions="nCells Time" units="undef"
-                     description="dummy 2d variable 1 for output only"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="v2d2" type="real" dimensions="nCells Time" units="undef"
-                     description="dummy 2d variable 2 for output only"
-                     packages="cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in"/>
 
 
                 <!-- ... KAIN_FRITSCH AND GRELL-FREITAS: -->
@@ -3183,6 +3122,7 @@
                      description="stability function for moisture"
                      packages="bl_mynn_in"/>
 
+
                 <!-- DIAGNOSTICS: -->
                 <var name="u10" type="real" dimensions="nCells Time" packages="bl_mynn_in;bl_ysu_in" units="m s^{-1}"
                      description="10-meter zonal wind"/>
@@ -3204,10 +3144,10 @@
                 <!-- ... PARAMETERIZATION OF GRAVITY WAVE DRAG OVER OROGRAPHY:                                          -->
                 <!-- ================================================================================================== -->
 
-		<var name="dusfcg" type="real" dimensions="nCells Time" units="Pa m s^{-1}"
+		<var name="dusfcg" type="real" dimensions="nCells Time" units="Pa"
                      description="vertically-integrated gravity wave drag over orography u-stress"/>
 
-                <var name="dvsfcg" type="real" dimensions="nCells Time" units="Pa m s^{-1}"
+                <var name="dvsfcg" type="real" dimensions="nCells Time" units="Pa"
                      description="vertically-integrated gravity wave drag over orography v-stress"/>
 
                 <var name="dusfc_ls" type="real" dimensions="nCells Time" units="Pa"
@@ -3242,10 +3182,10 @@
                      description="vertically-integrated turb orog form drag v-stress"
                      packages="ugwp_diags_stream"/>
 
-                <var name="dtaux3d" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}"
+                <var name="dtaux3d" type="real" dimensions="nVertLevels nCells Time" units="m s^{-2}"
                      description="gravity wave drag over orography u-stress"/>
 
-                <var name="dtauy3d" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1}"
+                <var name="dtauy3d" type="real" dimensions="nVertLevels nCells Time" units="m s^{-2}"
                      description="gravity wave drag over orography v-stress"/>
 
                 <var name="dtaux3d_ls" type="real" dimensions="nVertLevels nCells Time" units="m s^{-2}"
@@ -3687,6 +3627,9 @@
 
         <var_struct name="tend_physics" time_levs="1">
 
+                <var name="mp_top_level" type="integer" dimensions="" units="-"
+                     description="Vertical layer above which microphysics tendency is ignored"/>
+
                 <var name="tend_ru_physics" type="real" dimensions="nVertLevels nEdges Time" units="kg m^{-2} s^{-1}"
                      description="Total horizontal momentum tendency from physics"
                      persistence="scratch" />
@@ -3770,19 +3713,19 @@
 
                 <var name="rthcuten" type="real" dimensions="nVertLevels nCells Time" units="K s^{-1}"
                      description="tendency of potential temperature due to cumulus convection"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
                 <var name="rqvcuten" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1} s^{-1}"
                      description="tendency of water vapor mixing ratio due to cumulus convection"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
                 <var name="rqccuten" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1} s^{-1}"
                      description="tendency of cloud water mixing ratio due to cumulus convection"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
                 <var name="rqicuten" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1} s^{-1}"
                      description="tendency of cloud ice mixing ratio due to cumulus convection"
-                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_kain_fritsch_in;cu_ntiedtke_in"/>
 
 
                 <!-- KAIN_FRITSCH: -->
@@ -3797,39 +3740,15 @@
                 <!-- TIEDTKE AND GRELL -->
                 <var name="rqvdynten" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1} s^{-1}"
                      description="tendency of water vapor due to horizontal and vertical advections"
-                     packages="cu_grell_freitas_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_ntiedtke_in"/>
 
                 <var name="rucuten" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1} s^{-1}"
                      description="tendency of zonal wind due to cumulus convection"
-                     packages="cu_grell_freitas_in;cu_ntiedtke_in;cu_gf_monan_in"/>
+                     packages="cu_grell_freitas_in;cu_ntiedtke_in"/>
 
                 <var name="rvcuten" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1} s^{-1}"
                      description="tendency of meridional wind due to cumulus convection"
-                     packages="cu_grell_freitas_in;cu_ntiedtke_in;cu_gf_monan_in"/>
-
-                <var name="rcnvcfcuten" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
-                     description="tendency of convective cloud fraction from convection parameterization"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="rbuoyxcuten" type="real" dimensions="nVertLevels nCells Time" units="J kg^{-1} s^{-1}"
-                     description="tendency of buoyancy excess at the edge of the cold pool"
-                     packages="cu_gf_monan_in"/>
-
-                <var name="sub3d_rthcuten" type="real" dimensions="nVertLevels nCells Time" units="K s^{-1}"
-                     description="tendency of potential temperature due to the subsidence created by cumulus convection"
-                     packages="cu_grell_freitas_in;cu_gf_monan_in;gf_monan_sub3d"/>
-
-                <var name="sub3d_rqvcuten" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1} s^{-1}"
-                     description="tendency of water vapor mixing ratio due to the subsidence created by cumulus convection"
-                     packages="cu_grell_freitas_in;cu_gf_monan_in;gf_monan_sub3d"/>
-                
-                <var name="sub3d_rucuten" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1} s^{-1}"
-                     description="tendency of zonal wind due to the subsidence created by cumulus convection"
-                     packages="cu_grell_freitas_in;cu_gf_monan_in;gf_monan_sub3d"/>
-
-                <var name="sub3d_rvcuten" type="real" dimensions="nVertLevels nCells Time" units="m s^{-1} s^{-1}"
-                     description="tendency of meridional wind due to the subsidence created by cumulus convection"
-                     packages="cu_grell_freitas_in;cu_gf_monan_in;gf_monan_sub3d"/>
+                     packages="cu_grell_freitas_in;cu_ntiedtke_in"/>
 
 	        <!-- MGD should we add packages to the field below? -->
 	        <var name="rucuten_Edge" type="real"     dimensions="nVertLevels nEdges Time"/>

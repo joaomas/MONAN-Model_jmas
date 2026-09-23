@@ -212,7 +212,6 @@ else if (trim(config_physics_suite) == 'mesoscale_reference_monan') then
 !convection scheme:
  if(.not. (config_convection_scheme .eq. 'off'              .or. &
            config_convection_scheme .eq. 'cu_grell_freitas' .or. &
-           config_convection_scheme .eq. 'cu_gf_monan'      .or. &
            config_convection_scheme .eq. 'cu_kain_fritsch'  .or. &
            config_convection_scheme .eq. 'cu_tiedtke'       .or. &
            config_convection_scheme .eq. 'cu_ntiedtke')) then
@@ -271,8 +270,7 @@ else if (trim(config_physics_suite) == 'mesoscale_reference_monan') then
  if(.not. (config_radt_cld_scheme .eq. 'off'           .or. &
            config_radt_cld_scheme .eq. 'cld_incidence' .or. &
            config_radt_cld_scheme .eq. 'cld_fraction'  .or. &
-           config_radt_cld_scheme .eq. 'cld_fraction_thompson'.or. &
-           config_radt_cld_scheme .eq. 'cld_fraction_monan')) then
+           config_radt_cld_scheme .eq. 'cld_fraction_thompson')) then
 
     write(mpas_err_message,'(A,A20)') 'illegal value for calculation of cloud fraction: ', &
           trim(config_radt_cld_scheme)
