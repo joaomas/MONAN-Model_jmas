@@ -8,6 +8,7 @@ The MONAN Model is managed by a scientific committee appointed by INPE's directo
 
 ## History
 
+- Develop: PRs aceitos...
 - Version 2.0.0-rc (Release Candidate) - Includes: MPAS-Model 8.3.1 version, GF convection parametrization improvements, Check control numeric stability, Cumulative surfaces fluxes variables, Spatially heterogenious soil color maps for Noahmp, Soil layer bug fix, NVHPC compilation support. Now, it is default the new land surface (NOAH_MP) and Gravity Wave Drag (UGWP) for the suites 'mesoscale_reference_monan' and 'convection_permitting_monan'.
 - Version 1.4.4 - Cold-Start Dynamics Substepping for numerical stabilization and conditional dynamic substepping during the first N full integration steps; option for compilation using a Cray compiler; fixed debug error for compilation using the Intel compiler and compilation flag adjustments for the GNU compiler.
 - Version 1.4.3-rc (Release Candidate) - This development contains further configuration for the pre-operational MONAN global 10km uniform resolution, adapted to run on the new CRAY supercomputer. It contains new tuning for the GF scheme and sets WSM6 as the default cloud microphysics parameterization. For this configuration, the namelist.atmosphere should be set to config_physics_suite = 'mesoscale_reference_monan'.
